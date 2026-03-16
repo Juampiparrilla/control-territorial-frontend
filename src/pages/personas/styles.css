@@ -1,0 +1,757 @@
+/* ----- Layout ----- */
+.personasPage {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  text-align: left;
+}
+
+/* ----- Breadcrumb ----- */
+.personasBreadcrumb {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 16px 0 12px;
+}
+
+.personasBreadcrumb a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.personasBreadcrumb a:hover {
+  color: var(--accent);
+}
+
+.personasBreadcrumb span:last-of-type {
+  color: var(--text-h);
+  font-weight: 500;
+}
+
+.personasBreadcrumbSep {
+  margin: 0 6px;
+}
+
+/* ----- Nav tabs ----- */
+.personasNav {
+  width: 100%;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  margin-left: -24px;
+  margin-right: -24px;
+  padding-left: 24px;
+  padding-right: 24px;
+  box-sizing: content-box;
+}
+
+.personasTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  align-items: center;
+}
+
+.personasTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.personasTab:hover {
+  color: var(--text-h);
+}
+
+.personasTabActive {
+  color: var(--accent);
+  font-weight: 500;
+  border-bottom-color: var(--accent);
+}
+
+.personasTabIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.personasTabIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.personasTabLabel {
+  white-space: nowrap;
+}
+
+/* ----- Panel: title, description, button ----- */
+.personasPanel {
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.personasPanelHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.personasPanelTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.personasPanelTitleBlock h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.personasPanelTitleBlock h2 svg {
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+}
+
+.personasPanelDescription {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.personasHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.personasButtonPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.personasButtonPrimary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.personasButtonPrimary svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ----- Search ----- */
+.personasSearchWrap {
+  position: relative;
+  max-width: 480px;
+}
+
+.personasSearchWrap input {
+  width: 100%;
+  padding: 10px 40px 10px 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--text-h);
+  background: var(--bg);
+  outline: none;
+}
+
+.personasSearchWrap input::placeholder {
+  color: var(--text-muted);
+}
+
+.personasSearchWrap input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+
+.personasSearchWrap input:disabled {
+  background: #e9ecef;
+  color: #6c757d;
+  border-color: #ced4da;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.personasSearchWrap input:disabled::placeholder {
+  color: #adb5bd;
+}
+
+.personasSearchWrap.personasSearchWrapDisabled .personasSearchIcon {
+  color: #adb5bd;
+}
+
+.personasSearchIcon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+/* ----- Table + pagination card ----- */
+.personasTableCard {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.personasTableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.personasTable {
+  width: 100%;
+  min-width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.personasTable th,
+.personasTable td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.personasTable th.personasTableActions,
+.personasTable td.personasTableActions {
+  width: 180px;
+  min-width: 180px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.personasTable th {
+  font-weight: 600;
+  color: var(--text-h);
+  background: var(--bg-subtle);
+}
+
+.personasTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.personasTable tbody tr:hover {
+  background: var(--accent-bg);
+}
+
+.personasTableLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  margin-right: 16px;
+  font: inherit;
+  font-size: 0.875rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--accent);
+}
+
+.personasTableLink:hover {
+  text-decoration: underline;
+}
+
+.personasTableLink svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.personasTableLinkDelete {
+  color: var(--danger);
+}
+
+.personasTableLinkDelete:hover {
+  color: var(--danger);
+}
+
+/* ----- Pagination ----- */
+.personasPagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.personasPaginationNav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.personasPaginationBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.personasPaginationBtn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.personasPaginationBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.personasPaginationBtnActive {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.personasPaginationBtnActive:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--bg);
+}
+
+.personasPaginationPerPage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.personasPaginationPerPage select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.875rem;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ----- Form card ----- */
+.personasCard {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.personasFormHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.personasFormTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.personasFormClose {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #c62828;
+  border-radius: 6px;
+  background: transparent;
+  color: #c62828;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.personasFormClose:hover {
+  background: #c62828;
+  color: #fff;
+}
+
+/* ----- Confirmar cerrar (advertencia) ----- */
+.personasConfirmOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.personasConfirmModal {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 24px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border-left: 4px solid #d97706;
+}
+
+.personasConfirmTitle {
+  margin: 0 0 12px;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #b45309;
+}
+
+.personasConfirmMessage {
+  margin: 0 0 20px;
+  font-size: 0.9375rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.personasConfirmActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.personasConfirmAccept {
+  background: #c62828 !important;
+  border-color: #b71c1c !important;
+  color: #fff !important;
+}
+
+.personasConfirmAccept:hover {
+  background: #b71c1c !important;
+  color: #fff !important;
+}
+
+.personasForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.personasField {
+  display: grid;
+  gap: 6px;
+}
+
+.personasFieldLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.personasInput {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--text-h);
+  background: var(--bg);
+  outline: none;
+}
+
+.personasInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
+
+.personasFieldFull {
+  grid-column: 1 / -1;
+}
+
+.personasFieldHint {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.personasLeaderComboWrap {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.personasLeaderInput {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.personasLeaderDropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  background: var(--bg);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: var(--shadow);
+}
+
+.personasLeaderDropdownItem {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 0.9375rem;
+  color: var(--text-h);
+  border-bottom: 1px solid var(--border);
+}
+
+.personasLeaderDropdownItem:last-child {
+  border-bottom: none;
+}
+
+.personasLeaderDropdownItem:hover {
+  background: var(--accent-bg);
+}
+
+.personasLeaderDropdownEmpty {
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.personasLeaderSelect {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.personasActions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.personasButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.personasButton:hover:not(:disabled) {
+  background: var(--bg-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.personasButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.personasButtonSecondary {
+  background: var(--bg-subtle);
+}
+
+.personasButton svg {
+  width: 18px;
+  height: 18px;
+}
+
+.personasStatus {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.personasError {
+  color: var(--danger);
+}
+
+.personasSuccess {
+  color: #059669;
+}
+
+.personasLoading,
+.personasEmpty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+/* ----- Reportes (estadísticas) ----- */
+.reportesPanel {
+  width: 100%;
+}
+
+.reportesGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.reportesCard {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reportesCardTotal {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.reportesCardLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.reportesCardValue {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.reportesCardTotal .reportesCardValue {
+  color: var(--accent);
+}
+
+.reportesListadosTitle {
+  margin: 0 0 16px;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.reportesListadosGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.reportesListadoCard {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reportesListadoCardLabel {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.reportesListadoCardCount {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.reportesListadoCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .reportesGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .reportesListadosGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .reportesGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .personasForm {
+    grid-template-columns: 1fr;
+  }
+}
