@@ -1,73 +1,75 @@
-# React + TypeScript + Vite
+# Control Territorial - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicacion (React + TypeScript + Vite) para administrar personas y generar listados/reportes.
 
-Currently, two official plugins are available:
+## Conceptos principales
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### Roles (tabs)
+La pagina `Personas` organiza la UI por rol usando `PERSONAS_TABS`:
 
-## React Compiler
+- `Grupo` (tab `grupos`, rol 1)
+- `Referente` (tab `referentes`, rol 2)
+- `Puntero` (tab `punteros`, rol 3)
+- `Votante` (tab `votantes`, rol 4)
+- `Reportes` (tab `reportes`, sin CRUD; genera listados)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Cada tab de CRUD permite crear/editar/eliminar registros del rol correspondiente.
+La relacion jerarquica se guarda via `LiderId`.
 
-## Expanding the ESLint configuration
+## Jerarquia
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+`Grupo -> Referente -> Puntero -> Votante`
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Filtros y sincronizacion (Reportes por seleccion)
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+En `Personas > Reportes` hay una card `Reportes por seleccion` con 3 selects:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- `Grupo`
+- `Referente`
+- `Puntero`
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Comportamiento:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- Los selects dependientes se habilitan/deshabilitan segun la seleccion del nivel superior.
+- Al entrar a `Reportes`, los selects arrancan en placeholder (interpretado como “Todos”).
+- Si cambias `Grupo`, se resetean `Referente` y `Puntero` a placeholder para evitar combinaciones inconsistentes.
+- “placeholder = Todos” significa que ese nivel no filtra (no se arma una jerarquia parcial).
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+### Acciones unificadas: `Ver` / `Imprimir`
+En `Reportes por seleccion` hay solo 2 iconos:
+
+- `Ver`: abre el HTML del listado
+- `Imprimir`: imprime el mismo HTML con `window.print()`
+
+La combinacion de selects decide el listado (respetando la jerarquia hasta el nivel elegido):
+
+- `Grupo=Todos`, `Referente=Todos`, `Puntero=Todos`:
+  - `LISTADO DE GRUPOS` (solo informacion de grupos)
+- `Grupo=uno`, `Referente=Todos`, `Puntero=Todos`:
+  - `Listado de Referentes` del grupo seleccionado
+- `Grupo=uno`, `Referente=uno`, `Puntero=Todos`:
+  - `Punteros y votantes del referente` (muestra votantes de los punteros del referente)
+- `Grupo=uno`, `Referente=uno`, `Puntero=uno`:
+  - `Listado de Votantes` del puntero seleccionado
+
+Encabezado del reporte:
+
+- Antes del titulo se muestra una linea con la ruta hasta el nivel elegido:
+  - `Grupo: ...`
+  - `Grupo: ... -> Referente: ...`
+  - `Grupo: ... -> Referente: ... -> Puntero: ...`
+- Donde un nivel esta en placeholder, se escribe `Todos`.
+
+## Form CRUD (autocomplete/select) y roles
+
+Al crear/editar registros de roles que dependen de otros (por ejemplo `Referente` depende de `Grupo`, etc.), el campo de relacion usa:
+
+- Input de busqueda (autocomplete) mas un icono que revela el dropdown.
+- `form.LiderId` es la fuente de verdad (evita duplicacion visual entre input y select).
+- Si el usuario borra el texto cuando hay una seleccion, se permite deseleccionar limpiando `form.LiderId`.
+- Al editar un registro, el campo de relacion (ej. `Grupo`) se pre-carga con el valor que tenia el registro original.
+
+## Reportes globales (cards)
+
+Ademas de `Reportes por seleccion`, existen cards globales en `Reportes` (ej. `Todos los referentes`, `Todos los punteros`, `Todos los votantes`, `Cantidades totales`).
+

@@ -60,7 +60,7 @@ function emptyForm(rol: PersonRole): CreatePersonaDTO {
 }
 
 function formFromEntity(entity: PersonaResponseDTO): CreatePersonaDTO {
-  return {
+  const dto: CreatePersonaDTO = {
     Nombre: entity.Nombre,
     Apellido: entity.Apellido,
     DNI: entity.DNI,
@@ -68,8 +68,9 @@ function formFromEntity(entity: PersonaResponseDTO): CreatePersonaDTO {
     Telefono: entity.Telefono ?? '',
     Escuela: entity.EscuelaNombre ?? '',
     Mesa: entity.NroMesa != null ? String(entity.NroMesa) : '',
-    LiderId: null,
+    LiderId: entity.LiderId ?? null,
   }
+  return dto
 }
 
 function normalizeOptionalString(value: string): string | null {
@@ -95,15 +96,50 @@ export default function PersonasPage(): React.JSX.Element {
   const [page, setPage] = React.useState(1)
   const [perPage, setPerPage] = React.useState(10)
 
-  const [stats, setStats] = React.useState({ referentes: 0, punteros: 0, votantes: 0 })
+  const [stats, setStats] = React.useState({ grupos: 0, referentes: 0, punteros: 0, votantes: 0 })
   const [statsLoading, setStatsLoading] = React.useState(false)
+  const [reportesGrupos, setReportesGrupos] = React.useState<PersonaResponseDTO[]>([])
   const [reportesReferentes, setReportesReferentes] = React.useState<PersonaResponseDTO[]>([])
   const [reportesPunteros, setReportesPunteros] = React.useState<PersonaResponseDTO[]>([])
   const [reportesVotantes, setReportesVotantes] = React.useState<PersonaResponseDTO[]>([])
   const [reportesListsLoading, setReportesListsLoading] = React.useState(false)
+  const [reportesGrupoId, setReportesGrupoId] = React.useState<number | null>(null)
+  const [reportesReferenteId, setReportesReferenteId] = React.useState<number | null>(null)
+  const [reportesPunteroId, setReportesPunteroId] = React.useState<number | null>(null)
 
+  function agentLog(payload: { runId: string; hypothesisId: string; location: string; message: string; data?: Record<string, unknown> }) {
+    // #region agent log
+    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:payload.location,message:payload.message,data:payload.data ?? {},timestamp:Date.now(),runId:payload.runId,hypothesisId:payload.hypothesisId})}).catch(()=>{});
+    // #endregion
+  }
+
+  async function fetchReportesData(): Promise<{
+    grupos: PersonaResponseDTO[]
+    referentes: PersonaResponseDTO[]
+    punteros: PersonaResponseDTO[]
+    votantes: PersonaResponseDTO[]
+  }> {
+    const [grupos, referentes, punteros, votantes] = await Promise.all([
+      getPersonasByRole(1),
+      getPersonasByRole(2),
+      getPersonasByRole(3),
+      getPersonasByRole(4),
+    ])
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H27',
+      location: 'src/pages/personas/index.tsx:fetchReportesData',
+      message: 'Fetched reportes data for unified reports',
+      data: { grupos: grupos.length, referentes: referentes.length, punteros: punteros.length, votantes: votantes.length },
+    })
+    return { grupos, referentes, punteros, votantes }
+  }
+
+  // UI state (NO es fuente de verdad del grupo seleccionado; la fuente es form.LiderId)
   const [leaderFilterText, setLeaderFilterText] = React.useState('')
+  const [leaderIsTyping, setLeaderIsTyping] = React.useState(false)
   const [leaderDropdownOpen, setLeaderDropdownOpen] = React.useState(false)
+  const [leaderSelectVisible, setLeaderSelectVisible] = React.useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false)
   const leaderDropdownRef = React.useRef<HTMLDivElement>(null)
   const leaderBlurTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -126,20 +162,57 @@ export default function PersonasPage(): React.JSX.Element {
     if (tab.id === 'reportes') {
       setStatsLoading(true)
       Promise.all([
+        getPersonasByRole(1),
         getPersonasByRole(2),
         getPersonasByRole(3),
         getPersonasByRole(4),
       ])
-        .then(([ref, pun, vot]) =>
+        .then(([gru, ref, pun, vot]) =>
           setStats({
+            grupos: gru.length,
             referentes: ref.length,
             punteros: pun.length,
             votantes: vot.length,
           })
         )
-        .catch(() => setStats({ referentes: 0, punteros: 0, votantes: 0 }))
+        .catch(() => setStats({ grupos: 0, referentes: 0, punteros: 0, votantes: 0 }))
         .finally(() => setStatsLoading(false))
     }
+  }, [tab.id])
+
+  React.useEffect(() => {
+    // Reportes por selección: al entrar en Reportes, arrancar sin selección (placeholder)
+    if (tab.id !== 'reportes') return
+    setReportesGrupoId(null)
+    setReportesReferenteId(null)
+    setReportesPunteroId(null)
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H24',
+      location: 'src/pages/personas/index.tsx:reset-reportes-seleccion',
+      message: 'Reset reportes por seleccion state on enter reportes',
+      data: {},
+    })
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_ORDER',
+      location: 'src/pages/personas/index.tsx:reportes-actions-order',
+      message: 'Reportes por seleccion action buttons order (visual)',
+      data: {
+        order: [
+          'Ver referentes',
+          'Impr. ref.',
+          'Ver punteros (G)',
+          'Impr. punteros (G)',
+          'Ver punteros',
+          'Impr. punteros',
+          'Ver votantes',
+          'Impr. votantes',
+          'Ver P+V',
+          'Impr. P+V',
+        ],
+      },
+    })
   }, [tab.id])
 
   React.useEffect(() => {
@@ -197,29 +270,250 @@ export default function PersonasPage(): React.JSX.Element {
     getPersonasByRole(tab.leaderRole)
       .then(setLeaders)
       .catch(() => setLeaders([]))
-      .finally(() => setLeadersLoading(false))
+      .finally(() => {
+        setLeadersLoading(false)
+        agentLog({
+          runId: 'pre-fix',
+          hypothesisId: 'H4',
+          location: 'src/pages/personas/index.tsx:leaders-load',
+          message: 'Leaders loaded for tab',
+          data: { tabId: tab.id, leaderRole: tab.leaderRole },
+        })
+      })
   }, [tab.leaderRole, tab.isReportes])
 
   React.useEffect(() => {
     if (!tab.isReportes) return
     setReportesListsLoading(true)
     Promise.all([
+      getPersonasByRole(1),
       getPersonasByRole(2),
       getPersonasByRole(3),
       getPersonasByRole(4),
     ])
-      .then(([ref, pun, vot]) => {
+      .then(([gru, ref, pun, vot]) => {
+        setReportesGrupos(gru)
         setReportesReferentes(ref)
         setReportesPunteros(pun)
         setReportesVotantes(vot)
+        agentLog({
+          runId: 'pre-fix',
+          hypothesisId: 'H1',
+          location: 'src/pages/personas/index.tsx:reportes-load',
+          message: 'Reportes lists loaded',
+          data: {
+            grupos: gru.length,
+            referentes: ref.length,
+            punteros: pun.length,
+            votantes: vot.length,
+            punterosSinLider: pun.filter((p) => p.LiderId == null).length,
+            votantesSinLider: vot.filter((v) => v.LiderId == null).length,
+          },
+        })
+        // No autoseleccionar en "Reportes por selección"
+        setReportesGrupoId(null)
+        setReportesReferenteId(null)
+        setReportesPunteroId(null)
       })
       .catch(() => {
+        setReportesGrupos([])
         setReportesReferentes([])
         setReportesPunteros([])
         setReportesVotantes([])
+        setReportesGrupoId(null)
+        setReportesReferenteId(null)
+        setReportesPunteroId(null)
       })
       .finally(() => setReportesListsLoading(false))
   }, [tab.isReportes])
+
+  const reportesGruposSorted = React.useMemo(() => {
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+    return [...reportesGrupos].sort(sortByApellidoNombre)
+  }, [reportesGrupos])
+
+  const reportesReferentesSorted = React.useMemo(() => {
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+    return [...reportesReferentes].sort(sortByApellidoNombre)
+  }, [reportesReferentes])
+
+  const reportesReferentesOptions = React.useMemo(() => {
+    if (reportesGrupoId == null) return reportesReferentesSorted
+    return reportesReferentesSorted.filter((r) => r.LiderId === reportesGrupoId)
+  }, [reportesGrupoId, reportesReferentesSorted])
+
+  const reportesReferenteSelectDisabled = React.useMemo(() => {
+    // Bloquear hasta que se seleccione Grupo; luego bloquear si no hay referentes
+    if (reportesGrupoId == null) return true
+    return reportesReferentesOptions.length === 0
+  }, [reportesGrupoId, reportesReferentesOptions.length])
+
+  const reportesPunterosSorted = React.useMemo(() => {
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+    return [...reportesPunteros].sort(sortByApellidoNombre)
+  }, [reportesPunteros])
+
+  const reportesPunterosDeReferente = React.useMemo(() => {
+    if (reportesReferenteId == null) return []
+    return reportesPunteros.filter((p) => p.LiderId === reportesReferenteId)
+  }, [reportesPunteros, reportesReferenteId])
+
+  const reportesPunterosDeReferenteSorted = React.useMemo(() => {
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+    return [...reportesPunterosDeReferente].sort(sortByApellidoNombre)
+  }, [reportesPunterosDeReferente])
+
+  const reportesPunteroSelectDisabled = React.useMemo(() => {
+    // Si no hay referente seleccionado, o el referente no tiene punteros, bloquear selector
+    if (reportesReferenteId == null) return true
+    return reportesPunterosDeReferenteSorted.length === 0
+  }, [reportesReferenteId, reportesPunterosDeReferenteSorted.length])
+
+  const reportesPunterosOptions = React.useMemo(() => {
+    return reportesReferenteId == null ? reportesPunterosSorted : reportesPunterosDeReferenteSorted
+  }, [reportesReferenteId, reportesPunterosSorted, reportesPunterosDeReferenteSorted])
+
+  React.useEffect(() => {
+    // Cuando cambia el referente, mantener puntero válido o limpiar/auto-seleccionar
+    if (!tab.isReportes) return
+    if (reportesReferenteId == null) {
+      if (reportesPunteroId != null) setReportesPunteroId(null)
+      return
+    }
+    const allowed = reportesPunterosDeReferenteSorted
+    const isValid = reportesPunteroId != null && allowed.some((p) => p.Id === reportesPunteroId)
+    if (isValid) return
+    // No autoseleccionar: volver a placeholder si no es válido
+    setReportesPunteroId(null)
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H19',
+      location: 'src/pages/personas/index.tsx:reportes-sync-puntero',
+      message: 'Synced puntero selection after referente change',
+      data: { referenteId: reportesReferenteId, prevPunteroId: reportesPunteroId, nextPunteroId: null, options: allowed.length },
+    })
+  }, [tab.isReportes, reportesReferenteId, reportesPunterosDeReferenteSorted, reportesPunteroId])
+
+  React.useEffect(() => {
+    // Cuando cambia el grupo, resetear referente y puntero (placeholder)
+    if (!tab.isReportes) return
+    setReportesReferenteId(null)
+    setReportesPunteroId(null)
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H25',
+      location: 'src/pages/personas/index.tsx:reportes-sync-referente',
+      message: 'Reset referente/puntero after grupo change',
+      data: { grupoId: reportesGrupoId },
+    })
+  }, [tab.isReportes, reportesGrupoId])
+
+  const reportesVotantesDePuntero = React.useMemo(() => {
+    if (reportesPunteroId == null) return []
+    return reportesVotantes.filter((v) => v.LiderId === reportesPunteroId)
+  }, [reportesVotantes, reportesPunteroId])
+
+  const reportesVotantesDeReferente = React.useMemo(() => {
+    if (reportesReferenteId == null) return []
+    const punIds = new Set(reportesPunterosDeReferente.map((p) => p.Id))
+    return reportesVotantes.filter((v) => v.LiderId != null && punIds.has(v.LiderId))
+  }, [reportesVotantes, reportesReferenteId, reportesPunterosDeReferente])
+
+  const cantidadesTotalesRows = React.useMemo(() => {
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+
+    const punterosByReferente = new Map<number, PersonaResponseDTO[]>()
+    reportesPunteros.forEach((p) => {
+      const refId = p.LiderId ?? 0
+      if (!punterosByReferente.has(refId)) punterosByReferente.set(refId, [])
+      punterosByReferente.get(refId)!.push(p)
+    })
+
+    const votantesByPuntero = new Map<number, number>()
+    reportesVotantes.forEach((v) => {
+      const punId = v.LiderId ?? 0
+      votantesByPuntero.set(punId, (votantesByPuntero.get(punId) ?? 0) + 1)
+    })
+
+    const rows = [...reportesReferentes]
+      .sort(sortByApellidoNombre)
+      .map((ref) => {
+        const punteros = punterosByReferente.get(ref.Id) ?? []
+        const votos = punteros.reduce((acc, pun) => acc + (votantesByPuntero.get(pun.Id) ?? 0), 0)
+        return {
+          refId: ref.Id,
+          refApellido: ref.Apellido,
+          refNombre: ref.Nombre,
+          punteros: punteros.length,
+          votos,
+        }
+      })
+
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H2',
+      location: 'src/pages/personas/index.tsx:cantidades-totales-memo',
+      message: 'Cantidades totales computed',
+      data: {
+        rows: rows.length,
+        totalPunteros: rows.reduce((a, r) => a + r.punteros, 0),
+        totalVotos: rows.reduce((a, r) => a + r.votos, 0),
+        top3: rows.slice(0, 3),
+      },
+    })
+
+    return rows
+  }, [reportesReferentes, reportesPunteros, reportesVotantes])
 
   function openCreate() {
     setEditingId(null)
@@ -227,39 +521,74 @@ export default function PersonasPage(): React.JSX.Element {
     setShowForm(true)
     setError(null)
     setSuccessMessage(null)
+    setLeaderSelectVisible(false)
   }
 
   /** Genera el HTML del reporte jerárquico (referentes / punteros / votantes) */
-  function buildReportHtml(rol: 2 | 3 | 4, list: PersonaResponseDTO[]): string {
+  function buildReportHtml(
+    rol: 2 | 3 | 4,
+    list: PersonaResponseDTO[],
+    leaderById?: Map<number, PersonaResponseDTO>,
+    options?: {
+      groupName?: string
+      allLeaders?: PersonaResponseDTO[]
+      includeRolColumn?: boolean
+      headerPathLine?: string
+    }
+  ): string {
     const now = new Date()
     const groupTitle =
       rol === 2 ? 'LISTADO DE REFERENTES' : rol === 3 ? 'LISTADO DE PUNTEROS' : 'LISTADO DE VOTANTES'
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
+    const groupName = (options?.groupName ?? 'Varios').trim() || 'Varios'
+    const includeRolColumn = options?.includeRolColumn ?? (rol === 2)
+    const headerPathLine = (options?.headerPathLine ?? '').trim()
+    const leaderRolLabel = rol === 2 ? 'Grupo' : rol === 3 ? 'Referente' : 'Puntero'
+    const subRolLabel = rol === 2 ? 'Referente' : rol === 3 ? 'Puntero' : 'Votante'
 
-    const groups = new Map<string, PersonaResponseDTO[]>()
+    const groups = new Map<number, { leaderName: string; persons: PersonaResponseDTO[] }>()
     list.forEach((p) => {
-      const key = p.LiderNombre ?? 'Sin líder'
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key)!.push(p)
+      const idKey = p.LiderId ?? 0
+      const leaderName = p.LiderNombre ?? 'Sin líder'
+      if (!groups.has(idKey)) groups.set(idKey, { leaderName, persons: [] })
+      groups.get(idKey)!.persons.push(p)
     })
 
-    const groupEntries = Array.from(groups.entries()).sort(([a], [b]) => {
-      const aParts = a.split(' ')
-      const bParts = b.split(' ')
+    // Para reportes "globales": incluir líderes sin registros (ej. referentes sin punteros)
+    if (Array.isArray(options?.allLeaders) && options!.allLeaders.length > 0) {
+      options!.allLeaders.forEach((l) => {
+        if (!groups.has(l.Id)) {
+          groups.set(l.Id, { leaderName: `${l.Nombre} ${l.Apellido}`.trim(), persons: [] })
+        }
+      })
+      agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H20',
+        location: 'src/pages/personas/index.tsx:buildReportHtml-allLeaders',
+        message: 'Included empty leaders in report',
+        data: { rol, leaders: options!.allLeaders.length, groups: groups.size },
+      })
+    }
+
+    const groupEntries = Array.from(groups.entries()).sort(([, a], [, b]) => {
+      const aParts = a.leaderName.split(' ')
+      const bParts = b.leaderName.split(' ')
       const aLast = aParts[aParts.length - 1].toLowerCase()
       const bLast = bParts[bParts.length - 1].toLowerCase()
       if (aLast < bLast) return -1
       if (aLast > bLast) return 1
-      return a.localeCompare(b, 'es', { sensitivity: 'base' })
+      return a.leaderName.localeCompare(b.leaderName, 'es', { sensitivity: 'base' })
     })
 
     const rowsHtml = groupEntries
-      .map(([leaderName, persons], groupIndex) => {
+      .map(([leaderId, group], groupIndex) => {
+        const leaderName = group.leaderName
         const parts = leaderName.split(' ')
         const leaderApellido = parts.length > 1 ? parts[parts.length - 1] : leaderName
         const leaderNombre = parts.length > 1 ? parts.slice(0, -1).join(' ') : ''
+        const leaderDni = leaderId > 0 ? (leaderById?.get(leaderId)?.DNI ?? '—') : '—'
 
-        const sortedPersons = [...persons].sort((a, b) => {
+        const sortedPersons = [...group.persons].sort((a, b) => {
           const ap = (a.Apellido || '').toLowerCase()
           const bp = (b.Apellido || '').toLowerCase()
           if (ap < bp) return -1
@@ -274,9 +603,9 @@ export default function PersonasPage(): React.JSX.Element {
         const leaderRow = `
             <tr class="reportLeaderRow">
               <td>${groupIndex + 1}</td>
-              <td><strong>${leaderApellido.toUpperCase()}</strong></td>
-              <td><strong>${leaderNombre}</strong></td>
-              <td>—</td>
+              ${includeRolColumn ? `<td>${leaderRolLabel}</td>` : ''}
+              <td><strong>${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</strong></td>
+              <td>${leaderDni}</td>
               <td>—</td>
               <td>—</td>
               <td>—</td>
@@ -287,8 +616,8 @@ export default function PersonasPage(): React.JSX.Element {
             (p, idx) => `
                 <tr class="reportSubRow">
                   <td>${groupIndex + 1}.${idx + 1}</td>
-                  <td class="reportSubApellido">${p.Apellido}</td>
-                  <td>${p.Nombre}</td>
+                  ${includeRolColumn ? `<td class="reportRolCell">${subRolLabel}</td>` : ''}
+                  <td class="reportSubApellido">${p.Apellido}, ${p.Nombre}</td>
                   <td>${p.DNI}</td>
                   <td>${p.Telefono ?? '—'}</td>
                   <td>${p.EscuelaNombre ?? '—'}</td>
@@ -297,12 +626,42 @@ export default function PersonasPage(): React.JSX.Element {
           )
           .join('')
 
-        const spacer = groupIndex < groupEntries.length - 1
-          ? '<tr class="reportGroupSpacer"><td colspan="7"></td></tr>'
+        const subtotalRow = includeRolColumn
+          ? `
+            <tr class="reportSubTotalRow">
+              <td></td>
+              <td></td>
+              <td><strong>Subtotal : ${sortedPersons.length}</strong></td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+            </tr>`
           : ''
-        return leaderRow + subRows + spacer
+
+        const spacer = groupIndex < groupEntries.length - 1
+          ? `<tr class="reportGroupSpacer"><td colspan="${includeRolColumn ? 7 : 6}"></td></tr>`
+          : ''
+        return leaderRow + subRows + subtotalRow + spacer
       })
       .join('')
+
+    const totalRowHtml = includeRolColumn
+      ? (() => {
+          const total = groupEntries.reduce((acc, [, g]) => acc + g.persons.length, 0)
+          return `
+            <tr class="reportBlankRow"><td colspan="7"></td></tr>
+            <tr class="reportGrandTotalRow">
+              <td></td>
+              <td></td>
+              <td><strong>TOTAL : ${total}</strong></td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+              <td>—</td>
+            </tr>`
+        })()
+      : ''
 
     const pageTitle = rol === 2 ? 'Listado de Referentes' : rol === 3 ? 'Listado de Punteros' : 'Listado de Votantes'
     return `
@@ -312,30 +671,42 @@ export default function PersonasPage(): React.JSX.Element {
           <meta charSet="utf-8" />
           <title>Reporte - ${pageTitle}</title>
           <style>
+            @page { size: A4 landscape; margin: 12mm; }
             body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
             .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            .headerLeft { display: flex; flex-direction: column; }
             h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
             .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
             th { background: #f3f4f6; }
             tr.reportLeaderRow { background: #e5e7eb; font-weight: bold; }
             tr.reportSubRow { background: #fff; }
             tr.reportSubRow td.reportSubApellido { padding-left: 24px; }
+            tr.reportSubTotalRow { background: #f3f4f6; font-weight: 700; }
+            tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
+            tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
             tr.reportGroupSpacer td { height: 10px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>${groupTitle}</h1>
-            <div class="meta">Fecha: ${formattedDate}</div>
+            <div class="headerLeft">
+              ${headerPathLine ? `<div class="metaLine">${headerPathLine}</div>` : ''}
+              <h1>${groupTitle}</h1>
+            </div>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              ${headerPathLine ? '' : `<div class="metaLine">Grupo: ${groupName}</div>`}
+            </div>
           </div>
           <table>
             <thead>
               <tr>
                 <th>Nº</th>
-                <th>Apellido</th>
-                <th>Nombre</th>
+                ${includeRolColumn ? '<th>Rol</th>' : ''}
+                <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
                 <th>Escuela</th>
@@ -344,6 +715,7 @@ export default function PersonasPage(): React.JSX.Element {
             </thead>
             <tbody>
               ${rowsHtml}
+              ${totalRowHtml}
             </tbody>
           </table>
         </body>
@@ -352,7 +724,10 @@ export default function PersonasPage(): React.JSX.Element {
   }
 
   /** Reporte jerárquico: Referente → Punteros → Votantes (1, 1.1, 1.1.1, 1.1.2, 1.2, …) */
-  function buildJerarquiaReportHtml(): string {
+  function buildJerarquiaReportHtml(
+    data?: { grupos: PersonaResponseDTO[]; referentes: PersonaResponseDTO[]; punteros: PersonaResponseDTO[]; votantes: PersonaResponseDTO[] },
+    options?: { headerPathLine?: string }
+  ): string {
     const now = new Date()
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
 
@@ -368,9 +743,16 @@ export default function PersonasPage(): React.JSX.Element {
       return 0
     }
 
-    const refs = [...reportesReferentes].sort(sortByApellidoNombre)
+    const grupos = [...(data?.grupos ?? reportesGrupos)].sort(sortByApellidoNombre)
+    const refs = [...(data?.referentes ?? reportesReferentes)].sort(sortByApellidoNombre)
+    const refsByGrupo = new Map<number, PersonaResponseDTO[]>()
+    refs.forEach((r) => {
+      const gid = r.LiderId ?? 0
+      if (!refsByGrupo.has(gid)) refsByGrupo.set(gid, [])
+      refsByGrupo.get(gid)!.push(r)
+    })
     const punterosByLider = new Map<number, PersonaResponseDTO[]>()
-    reportesPunteros.forEach((p) => {
+    ;(data?.punteros ?? reportesPunteros).forEach((p) => {
       const lid = p.LiderId ?? 0
       if (!punterosByLider.has(lid)) punterosByLider.set(lid, [])
       punterosByLider.get(lid)!.push(p)
@@ -378,7 +760,7 @@ export default function PersonasPage(): React.JSX.Element {
     punterosByLider.forEach((arr) => arr.sort(sortByApellidoNombre))
 
     const votantesByLider = new Map<number, PersonaResponseDTO[]>()
-    reportesVotantes.forEach((v) => {
+    ;(data?.votantes ?? reportesVotantes).forEach((v) => {
       const lid = v.LiderId ?? 0
       if (!votantesByLider.has(lid)) votantesByLider.set(lid, [])
       votantesByLider.get(lid)!.push(v)
@@ -386,53 +768,115 @@ export default function PersonasPage(): React.JSX.Element {
     votantesByLider.forEach((arr) => arr.sort(sortByApellidoNombre))
 
     const rows: string[] = []
-    refs.forEach((ref, i) => {
-      const numRef = i + 1
+    let totalReferentes = 0
+    let totalPunteros = 0
+    let totalVotantes = 0
+    grupos.forEach((g, gi) => {
+      const numG = gi + 1
       rows.push(`
-        <tr class="reportRowRef">
-          <td class="reportNumRef">${numRef}</td>
-          <td>Referente</td>
-          <td><strong>${ref.Apellido}</strong></td>
-          <td><strong>${ref.Nombre}</strong></td>
-          <td>${ref.DNI}</td>
-          <td>${ref.Telefono ?? '—'}</td>
-          <td>${ref.EscuelaNombre ?? '—'}</td>
-          <td>${ref.NroMesa ?? '—'}</td>
+        <tr class="reportRowGroup">
+          <td class="reportNumGroup">${numG}</td>
+          <td>Grupo</td>
+          <td><strong>${g.Apellido}, ${g.Nombre}</strong></td>
+          <td>${g.DNI}</td>
+          <td>${g.Telefono ?? '—'}</td>
+          <td>${g.EscuelaNombre ?? '—'}</td>
+          <td>${g.NroMesa ?? '—'}</td>
         </tr>`)
 
-      const punteros = punterosByLider.get(ref.Id) ?? []
-      punteros.forEach((pun, j) => {
-        const numPun = `${numRef}.${j + 1}`
+      const refsForGroup = refsByGrupo.get(g.Id) ?? []
+      const groupReferentes = refsForGroup.length
+      let groupPunteros = 0
+      let groupVotantes = 0
+      if (refsForGroup.length === 0) {
         rows.push(`
-        <tr class="reportRowPun">
-          <td class="reportNumPun">${numPun}</td>
-          <td>Puntero</td>
-          <td class="reportIndent1">${pun.Apellido}</td>
-          <td>${pun.Nombre}</td>
-          <td>${pun.DNI}</td>
-          <td>${pun.Telefono ?? '—'}</td>
-          <td>${pun.EscuelaNombre ?? '—'}</td>
-          <td>${pun.NroMesa ?? '—'}</td>
+          <tr class="reportRowEmpty">
+            <td class="reportNumEmpty">${numG}.—</td>
+            <td>Referente</td>
+            <td class="reportIndent1"><em>Sin referentes</em></td>
+            <td>—</td><td>—</td><td>—</td><td>—</td>
+          </tr>`)
+      } else {
+        refsForGroup.forEach((ref, ri) => {
+          const numRef = `${numG}.${ri + 1}`
+          rows.push(`
+            <tr class="reportRowRef">
+              <td class="reportNumRef">${numRef}</td>
+              <td>Referente</td>
+              <td class="reportIndent1"><strong>${ref.Apellido}, ${ref.Nombre}</strong></td>
+              <td>${ref.DNI}</td>
+              <td>${ref.Telefono ?? '—'}</td>
+              <td>${ref.EscuelaNombre ?? '—'}</td>
+              <td>${ref.NroMesa ?? '—'}</td>
+            </tr>`)
+
+          const punteros = punterosByLider.get(ref.Id) ?? []
+          groupPunteros += punteros.length
+          if (punteros.length === 0) {
+            rows.push(`
+              <tr class="reportRowEmpty">
+                <td class="reportNumEmpty">${numRef}.—</td>
+                <td>Puntero</td>
+                <td class="reportIndent2"><em>Sin punteros</em></td>
+                <td>—</td><td>—</td><td>—</td><td>—</td>
+              </tr>`)
+          } else {
+            punteros.forEach((pun, pj) => {
+              const numPun = `${numRef}.${pj + 1}`
+              rows.push(`
+                <tr class="reportRowPun">
+                  <td class="reportNumPun">${numPun}</td>
+                  <td>Puntero</td>
+                  <td class="reportIndent2">${pun.Apellido}, ${pun.Nombre}</td>
+                  <td>${pun.DNI}</td>
+                  <td>${pun.Telefono ?? '—'}</td>
+                  <td>${pun.EscuelaNombre ?? '—'}</td>
+                  <td>${pun.NroMesa ?? '—'}</td>
+                </tr>`)
+
+              const votantes = votantesByLider.get(pun.Id) ?? []
+              groupVotantes += votantes.length
+              if (votantes.length === 0) {
+                rows.push(`
+                  <tr class="reportRowEmpty">
+                    <td class="reportNumEmpty">${numPun}.—</td>
+                    <td>Votante</td>
+                    <td class="reportIndent3"><em>Sin votantes</em></td>
+                    <td>—</td><td>—</td><td>—</td><td>—</td>
+                  </tr>`)
+              } else {
+                votantes.forEach((vot, vk) => {
+                  const numVot = `${numPun}.${vk + 1}`
+                  rows.push(`
+                    <tr class="reportRowVot">
+                      <td class="reportNumVot">${numVot}</td>
+                      <td class="reportRolVot">Votante</td>
+                      <td class="reportIndent3">${vot.Apellido}, ${vot.Nombre}</td>
+                      <td>${vot.DNI}</td>
+                      <td>${vot.Telefono ?? '—'}</td>
+                      <td>${vot.EscuelaNombre ?? '—'}</td>
+                      <td>${vot.NroMesa ?? '—'}</td>
+                    </tr>`)
+                })
+              }
+            })
+          }
+        })
+      }
+
+      totalReferentes += groupReferentes
+      totalPunteros += groupPunteros
+      totalVotantes += groupVotantes
+      rows.push(`
+        <tr class="reportSubTotalRow">
+          <td></td>
+          <td></td>
+          <td><strong>Subtotal Referentes: ${groupReferentes} | Punteros: ${groupPunteros} | Votantes: ${groupVotantes}</strong></td>
+          <td>—</td><td>—</td><td>—</td><td>—</td>
         </tr>`)
 
-        const votantes = votantesByLider.get(pun.Id) ?? []
-        votantes.forEach((vot, k) => {
-          const numVot = `${numPun}.${k + 1}`
-          rows.push(`
-        <tr class="reportRowVot">
-          <td class="reportNumVot">${numVot}</td>
-          <td class="reportRolVot">Votante</td>
-          <td class="reportIndent2">${vot.Apellido}</td>
-          <td>${vot.Nombre}</td>
-          <td>${vot.DNI}</td>
-          <td>${vot.Telefono ?? '—'}</td>
-          <td>${vot.EscuelaNombre ?? '—'}</td>
-          <td>${vot.NroMesa ?? '—'}</td>
-        </tr>`)
-        })
-      })
-      if (i < refs.length - 1) {
-        rows.push('<tr class="reportJerarquiaSpacer"><td colspan="8"></td></tr>')
+      if (gi < grupos.length - 1) {
+        rows.push('<tr class="reportJerarquiaSpacer"><td colspan="7"></td></tr>')
       }
     })
 
@@ -445,37 +889,61 @@ export default function PersonasPage(): React.JSX.Element {
           <meta charSet="utf-8" />
           <title>Reporte - Jerarquía Referentes / Punteros / Votantes</title>
           <style>
+            @page { size: A4 landscape; margin: 12mm; }
             body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
             .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            .headerLeft { display: flex; flex-direction: column; }
             h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
             .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
             th { background: #f3f4f6; }
+            tr.reportRowGroup { background: #dbeafe; font-weight: 900; }
             tr.reportRowRef { background: #e5e7eb; font-weight: bold; }
             tr.reportRowPun { background: #f9fafb; }
             tr.reportRowVot { background: #fff; }
-            td.reportNumRef { padding-left: 8px; }
-            td.reportNumPun { padding-left: 28px; }
+            tr.reportRowEmpty { background: #fff; color: #6b7280; }
+            tr.reportSubTotalRow { background: #f3f4f6; font-weight: 800; }
+            tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
+            tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
+            td.reportNumGroup { padding-left: 8px; }
+            td.reportNumRef { padding-left: 18px; }
+            td.reportNumPun { padding-left: 36px; }
             td.reportNumVot { padding-left: 56px; }
+            td.reportNumEmpty { padding-left: 56px; color: #6b7280; }
             td.reportRolVot { padding-left: 24px; }
-            td.reportIndent1 { padding-left: 24px; }
-            td.reportIndent2 { padding-left: 40px; }
+            td.reportIndent1 { padding-left: 18px; }
+            td.reportIndent2 { padding-left: 36px; }
+            td.reportIndent3 { padding-left: 52px; }
             tr.reportJerarquiaSpacer td { height: 14px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>JERARQUÍA REFERENTES → PUNTEROS → VOTANTES</h1>
-            <div class="meta">Fecha: ${formattedDate}</div>
+            <div class="headerLeft">
+              ${
+                (options?.headerPathLine ?? '').trim()
+                  ? `<div class="metaLine">${(options?.headerPathLine ?? '').trim()}</div>`
+                  : ''
+              }
+              <h1>JERARQUÍA POR GRUPO → REFERENTES → PUNTEROS → VOTANTES</h1>
+            </div>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              ${
+                (options?.headerPathLine ?? '').trim()
+                  ? ''
+                  : `<div class="metaLine">Grupo: Varios</div>`
+              }
+            </div>
           </div>
           <table>
             <thead>
               <tr>
                 <th>Nº</th>
                 <th>Rol</th>
-                <th>Apellido</th>
-                <th>Nombre</th>
+                <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
                 <th>Escuela</th>
@@ -484,11 +952,295 @@ export default function PersonasPage(): React.JSX.Element {
             </thead>
             <tbody>
               ${rowsHtml}
+              <tr class="reportBlankRow"><td colspan="7"></td></tr>
+              <tr class="reportGrandTotalRow">
+                <td></td>
+                <td></td>
+                <td><strong>TOTAL Referentes: ${totalReferentes} | Punteros: ${totalPunteros} | Votantes: ${totalVotantes}</strong></td>
+                <td>—</td><td>—</td><td>—</td><td>—</td>
+              </tr>
             </tbody>
           </table>
         </body>
       </html>
       `
+  }
+
+  function buildGruposOnlyReportHtml(options?: { headerPathLine?: string }): string {
+    const now = new Date()
+    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
+    const headerPathLine = (options?.headerPathLine ?? '').trim()
+
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+
+    const grupos = [...reportesGrupos].sort(sortByApellidoNombre)
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_GRUPOS_ONLY_HTML',
+      location: 'src/pages/personas/index.tsx:buildGruposOnlyReportHtml',
+      message: 'Building grupos-only report (flat list)',
+      data: { groupsCount: grupos.length },
+    })
+
+    const rowsHtml = grupos
+      .map(
+        (g, idx) => `
+        <tr>
+          <td>${idx + 1}</td>
+          <td><strong>${(g.Apellido || '').toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
+          <td>${g.DNI}</td>
+          <td>${g.Telefono ?? '—'}</td>
+        </tr>`
+      )
+      .join('')
+
+    return `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charSet="utf-8" />
+          <title>Reporte - Listado de Grupos</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
+            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            .headerLeft { display: flex; flex-direction: column; }
+            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
+            .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+            th { background: #f3f4f6; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="headerLeft">
+              ${headerPathLine ? `<div class="metaLine">${headerPathLine}</div>` : ''}
+              <h1>LISTADO DE GRUPOS</h1>
+            </div>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Apellido/s y Nombre/s</th>
+                <th>DNI</th>
+                <th>Teléfono</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `
+  }
+
+  function buildPunterosPorGrupoReportHtml(data?: { grupos: PersonaResponseDTO[]; referentes: PersonaResponseDTO[]; punteros: PersonaResponseDTO[] }): string {
+    const now = new Date()
+    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
+
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+
+    const grupos = [...(data?.grupos ?? reportesGrupos)].sort(sortByApellidoNombre)
+    const referentes = [...(data?.referentes ?? reportesReferentes)].sort(sortByApellidoNombre)
+
+    const referentesByGrupo = new Map<number, PersonaResponseDTO[]>()
+    referentes.forEach((r) => {
+      const gid = r.LiderId ?? 0
+      if (!referentesByGrupo.has(gid)) referentesByGrupo.set(gid, [])
+      referentesByGrupo.get(gid)!.push(r)
+    })
+
+    const punterosByReferente = new Map<number, PersonaResponseDTO[]>()
+    ;(data?.punteros ?? reportesPunteros).forEach((p) => {
+      const rid = p.LiderId ?? 0
+      if (!punterosByReferente.has(rid)) punterosByReferente.set(rid, [])
+      punterosByReferente.get(rid)!.push(p)
+    })
+    punterosByReferente.forEach((arr) => arr.sort(sortByApellidoNombre))
+
+    const rows: string[] = []
+    let totalReferentes = 0
+    let totalPunteros = 0
+    grupos.forEach((g, gi) => {
+      // Fila cabecera del grupo
+      rows.push(`
+        <tr class="reportGroupTopRow">
+          <td class="reportNumGroup">${gi + 1}</td>
+          <td>Grupo</td>
+          <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
+          <td>${g.DNI}</td>
+          <td>—</td>
+          <td>—</td>
+          <td>—</td>
+        </tr>`)
+
+      const refs = referentesByGrupo.get(g.Id) ?? []
+      const groupReferentes = refs.length
+      let groupPunteros = 0
+      if (refs.length === 0) {
+        rows.push(`
+          <tr class="reportEmptyRow">
+            <td></td>
+            <td>Referente</td>
+            <td class="reportIndent1"><em>Sin referentes</em></td>
+            <td>—</td><td>—</td><td>—</td><td>—</td>
+          </tr>`)
+      } else {
+        refs.forEach((ref, ri) => {
+          const punteros = punterosByReferente.get(ref.Id) ?? []
+          groupPunteros += punteros.length
+          rows.push(`
+            <tr class="reportLeaderRow">
+              <td class="reportNumRef">${gi + 1}.${ri + 1}</td>
+              <td>Referente</td>
+              <td class="reportIndent1"><strong>${ref.Apellido.toUpperCase()}${ref.Nombre ? `, ${ref.Nombre}` : ''}</strong></td>
+              <td>${ref.DNI}</td>
+              <td>${ref.Telefono ?? '—'}</td>
+              <td>${ref.EscuelaNombre ?? '—'}</td>
+              <td>${ref.NroMesa ?? '—'}</td>
+            </tr>`)
+
+          if (punteros.length === 0) {
+            rows.push(`
+              <tr class="reportEmptyRow">
+                <td></td>
+                <td>Puntero</td>
+                <td class="reportIndent2"><em>Sin punteros</em></td>
+                <td>—</td><td>—</td><td>—</td><td>—</td>
+              </tr>`)
+          } else {
+            punteros.forEach((p, pi) => {
+              rows.push(`
+                <tr class="reportSubRow">
+                  <td class="reportNumPun">${gi + 1}.${ri + 1}.${pi + 1}</td>
+                  <td class="reportRolPuntero">Puntero</td>
+                  <td class="reportIndent2">${p.Apellido}, ${p.Nombre}</td>
+                  <td>${p.DNI}</td>
+                  <td>${p.Telefono ?? '—'}</td>
+                  <td>${p.EscuelaNombre ?? '—'}</td>
+                  <td>${p.NroMesa ?? '—'}</td>
+                </tr>`)
+            })
+          }
+        })
+      }
+
+      totalReferentes += groupReferentes
+      totalPunteros += groupPunteros
+      rows.push(`
+        <tr class="reportSubTotalRow">
+          <td></td>
+          <td></td>
+          <td><strong>Subtotal Referentes: ${groupReferentes} | Subtotal Punteros: ${groupPunteros}</strong></td>
+          <td>—</td><td>—</td><td>—</td><td>—</td>
+        </tr>`)
+
+      if (gi < grupos.length - 1) {
+        rows.push('<tr class="reportGroupSpacer"><td colspan="7"></td></tr>')
+      }
+    })
+
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H22',
+      location: 'src/pages/personas/index.tsx:build-punteros-por-grupo',
+      message: 'Building punteros report grouped by grupo then referente',
+      data: { grupos: reportesGrupos.length, referentes: reportesReferentes.length, punteros: reportesPunteros.length },
+    })
+
+    return `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charSet="utf-8" />
+          <title>Reporte - Listado de punteros (por grupo)</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
+            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
+            .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+            th { background: #f3f4f6; }
+            tr.reportGroupTopRow { background: #dbeafe; font-weight: 800; }
+            tr.reportLeaderRow { background: #e5e7eb; font-weight: 700; }
+            tr.reportSubRow { background: #fff; }
+            tr.reportEmptyRow { background: #fff; color: #6b7280; }
+            tr.reportSubTotalRow { background: #f3f4f6; font-weight: 800; }
+            tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
+            tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
+            td.reportRolPuntero { padding-left: 24px; }
+            td.reportIndent1 { padding-left: 18px; }
+            td.reportIndent2 { padding-left: 36px; }
+            td.reportNumGroup { padding-left: 8px; }
+            td.reportNumRef { padding-left: 18px; }
+            td.reportNumPun { padding-left: 36px; }
+            tr.reportGroupSpacer td { height: 12px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>LISTADO DE PUNTEROS (POR GRUPO)</h1>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              <div class="metaLine">Grupo: Varios</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Rol</th>
+                <th>Apellido/s y Nombre/s</th>
+                <th>DNI</th>
+                <th>Teléfono</th>
+                <th>Escuela</th>
+                <th>Mesa</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.join('')}
+              <tr class="reportBlankRow"><td colspan="7"></td></tr>
+              <tr class="reportGrandTotalRow">
+                <td></td>
+                <td></td>
+                <td><strong>TOTAL Referentes: ${totalReferentes} | TOTAL Punteros: ${totalPunteros}</strong></td>
+                <td>—</td><td>—</td><td>—</td><td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `
   }
 
   function openReportWindow(html: string): void {
@@ -506,7 +1258,16 @@ export default function PersonasPage(): React.JSX.Element {
       window.alert('No hay datos para mostrar.')
       return
     }
-    openReportWindow(buildReportHtml(rol, list))
+    if (rol === 3) {
+      openReportWindow(buildPunterosPorGrupoReportHtml())
+      return
+    }
+
+    const leaderById =
+      rol === 2
+        ? new Map(reportesGrupos.map((g) => [g.Id, g]))
+        : new Map(reportesPunteros.map((p) => [p.Id, p]))
+    openReportWindow(buildReportHtml(rol, list, leaderById, { groupName: 'Varios' }))
   }
 
   function printReportFromReportes(rol: 2 | 3 | 4) {
@@ -515,10 +1276,25 @@ export default function PersonasPage(): React.JSX.Element {
       window.alert('No hay datos para imprimir.')
       return
     }
+    if (rol === 3) {
+      const w = window.open('', '_blank')
+      if (!w) return
+      w.document.open()
+      w.document.write(buildPunterosPorGrupoReportHtml())
+      w.document.close()
+      w.focus()
+      w.print()
+      return
+    }
+
+    const leaderById =
+      rol === 2
+        ? new Map(reportesGrupos.map((g) => [g.Id, g]))
+        : new Map(reportesPunteros.map((p) => [p.Id, p]))
     const w = window.open('', '_blank')
     if (!w) return
     w.document.open()
-    w.document.write(buildReportHtml(rol, list))
+    w.document.write(buildReportHtml(rol, list, leaderById, { groupName: 'Varios' }))
     w.document.close()
     w.focus()
     w.print()
@@ -538,6 +1314,518 @@ export default function PersonasPage(): React.JSX.Element {
     w.print()
   }
 
+  type ReportesSeleccionMode = 'todos' | 'grupo' | 'referente' | 'puntero'
+
+  function getReportesSeleccionModeAndHeaderLine(): { mode: ReportesSeleccionMode; headerPathLine: string } {
+    const grupoId = reportesGrupoId
+    const referenteId = reportesReferenteId
+    const punteroId = reportesPunteroId
+
+    if (grupoId == null && referenteId == null && punteroId == null) {
+      return { mode: 'todos', headerPathLine: 'Grupo: Todos' }
+    }
+
+    const grupo = grupoId != null ? reportesGrupos.find((g) => g.Id === grupoId) ?? null : null
+    const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : 'Todos'
+
+    if (grupoId != null && referenteId == null && punteroId == null) {
+      return { mode: 'grupo', headerPathLine: `Grupo: ${grupoDisplay}` }
+    }
+
+    const ref = referenteId != null ? reportesReferentes.find((r) => r.Id === referenteId) ?? null : null
+    const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : 'Todos'
+
+    if (grupoId != null && referenteId != null && punteroId == null) {
+      return { mode: 'referente', headerPathLine: `Grupo: ${grupoDisplay} -> Referente: ${referenteDisplay}` }
+    }
+
+    const pun = punteroId != null ? reportesPunteros.find((p) => p.Id === punteroId) ?? null : null
+    const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : 'Todos'
+
+    return { mode: 'puntero', headerPathLine: `Grupo: ${grupoDisplay} -> Referente: ${referenteDisplay} -> Puntero: ${punteroDisplay}` }
+  }
+
+  function viewReportesPorSeleccion() {
+    const { mode, headerPathLine } = getReportesSeleccionModeAndHeaderLine()
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_SEL_MODE_VIEW',
+      location: 'src/pages/personas/index.tsx:view-reportes-por-seleccion',
+      message: 'Reportes por seleccion: view branch decided',
+      data: { mode, grupoId: reportesGrupoId, referenteId: reportesReferenteId, punteroId: reportesPunteroId, headerPathLine },
+    })
+
+    if (mode === 'todos') {
+      openReportWindow(buildGruposOnlyReportHtml({ headerPathLine }))
+      return
+    }
+    if (mode === 'grupo') {
+      viewReferentesDeGrupo()
+      return
+    }
+    if (mode === 'referente') {
+      openReportWindow(buildPunterosYVotosDeReferenteHtml({ headerPathLine }))
+      return
+    }
+    viewVotantesDePuntero()
+  }
+
+  function printReportesPorSeleccion() {
+    const { mode, headerPathLine } = getReportesSeleccionModeAndHeaderLine()
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_SEL_MODE_PRINT',
+      location: 'src/pages/personas/index.tsx:print-reportes-por-seleccion',
+      message: 'Reportes por seleccion: print branch decided',
+      data: { mode, grupoId: reportesGrupoId, referenteId: reportesReferenteId, punteroId: reportesPunteroId, headerPathLine },
+    })
+
+    if (mode === 'todos') {
+      const w = window.open('', '_blank')
+      if (!w) return
+      w.document.open()
+      w.document.write(buildGruposOnlyReportHtml({ headerPathLine }))
+      w.document.close()
+      w.focus()
+      w.print()
+      return
+    }
+    if (mode === 'grupo') {
+      printReferentesDeGrupo()
+      return
+    }
+    if (mode === 'referente') {
+      const w = window.open('', '_blank')
+      if (!w) return
+      w.document.open()
+      w.document.write(buildPunterosYVotosDeReferenteHtml({ headerPathLine }))
+      w.document.close()
+      w.focus()
+      w.print()
+      return
+    }
+    printVotantesDePuntero()
+  }
+
+  function buildCantidadesTotalesReportHtml(): string {
+    const now = new Date()
+    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
+
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+
+    const grupos = [...reportesGrupos].sort(sortByApellidoNombre)
+    const refsByGrupo = new Map<number, PersonaResponseDTO[]>()
+    reportesReferentes.forEach((r) => {
+      const gid = r.LiderId ?? 0
+      if (!refsByGrupo.has(gid)) refsByGrupo.set(gid, [])
+      refsByGrupo.get(gid)!.push(r)
+    })
+    refsByGrupo.forEach((arr) => arr.sort(sortByApellidoNombre))
+
+    const punterosByReferente = new Map<number, PersonaResponseDTO[]>()
+    reportesPunteros.forEach((p) => {
+      const rid = p.LiderId ?? 0
+      if (!punterosByReferente.has(rid)) punterosByReferente.set(rid, [])
+      punterosByReferente.get(rid)!.push(p)
+    })
+
+    const votantesCountByPuntero = new Map<number, number>()
+    reportesVotantes.forEach((v) => {
+      const pid = v.LiderId ?? 0
+      votantesCountByPuntero.set(pid, (votantesCountByPuntero.get(pid) ?? 0) + 1)
+    })
+
+    let globalIndex = 0
+    const rows: string[] = []
+    const groupSummaries: Array<{ grupoId: number; punteros: number; votantes: number }> = []
+
+    grupos.forEach((g, gi) => {
+      const refs = refsByGrupo.get(g.Id) ?? []
+      rows.push(`
+        <tr class="reportGroupTopRow">
+          <td>${gi + 1}</td>
+          <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
+          <td style="text-align:right;">—</td>
+          <td style="text-align:right;">—</td>
+          <td style="text-align:right;">—</td>
+        </tr>`)
+
+      if (refs.length === 0) {
+        rows.push(`
+          <tr class="reportEmptyRow">
+            <td></td>
+            <td class="reportIndent1"><em>Sin referentes</em></td>
+            <td style="text-align:right;">0</td>
+            <td style="text-align:right;">0</td>
+            <td style="text-align:right;">0</td>
+          </tr>`)
+        groupSummaries.push({ grupoId: g.Id, punteros: 0, votantes: 0 })
+        return
+      }
+
+      let groupPunteros = 0
+      let groupVotantes = 0
+      refs.forEach((ref) => {
+        globalIndex += 1
+        const punteros = punterosByReferente.get(ref.Id) ?? []
+        const votos = punteros.reduce((acc, pun) => acc + (votantesCountByPuntero.get(pun.Id) ?? 0), 0)
+        groupPunteros += punteros.length
+        groupVotantes += votos
+        rows.push(`
+          <tr>
+            <td>${gi + 1}.${globalIndex}</td>
+            <td class="reportIndent1">${ref.Apellido}, ${ref.Nombre}</td>
+            <td style="text-align:right;">${punteros.length}</td>
+            <td style="text-align:right;">${votos}</td>
+            <td style="text-align:right;">${punteros.length + votos}</td>
+          </tr>`)
+      })
+
+      groupSummaries.push({ grupoId: g.Id, punteros: groupPunteros, votantes: groupVotantes })
+      rows.push(`
+        <tr class="reportSubTotalRow">
+          <td></td>
+          <td><strong>Subtotal ${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
+          <td style="text-align:right;"><strong>${groupPunteros}</strong></td>
+          <td style="text-align:right;"><strong>${groupVotantes}</strong></td>
+          <td style="text-align:right;"><strong>${groupPunteros + groupVotantes}</strong></td>
+        </tr>`)
+
+      if (gi < grupos.length - 1) {
+        rows.push('<tr class="reportGroupSpacer"><td colspan="5"></td></tr>')
+      }
+    })
+
+    const rowsHtml = rows.join('')
+
+    const totalPunteros = cantidadesTotalesRows.reduce((a, r) => a + r.punteros, 0)
+    const totalVotos = cantidadesTotalesRows.reduce((a, r) => a + r.votos, 0)
+    const totalGeneral = totalPunteros + totalVotos
+
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H3',
+      location: 'src/pages/personas/index.tsx:build-cantidades-totales-html',
+      message: 'Building cantidades totales HTML',
+      data: { rows: cantidadesTotalesRows.length, totalPunteros, totalVotos, totalGeneral },
+    })
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H23',
+      location: 'src/pages/personas/index.tsx:build-cantidades-totales-html-groups',
+      message: 'Cantidades totales grouped by grupo',
+      data: { grupos: grupos.length, groupSummaries },
+    })
+
+    return `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charSet="utf-8" />
+          <title>Reporte - Cantidades totales</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
+            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
+            .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+            th { background: #f3f4f6; }
+            tfoot td { background: #e5e7eb; font-weight: 700; }
+            tr.reportGroupTopRow { background: #dbeafe; font-weight: 900; }
+            tr.reportSubTotalRow { background: #f3f4f6; font-weight: 700; }
+            tr.reportEmptyRow { background: #fff; color: #6b7280; }
+            td.reportIndent1 { padding-left: 18px; }
+            tr.reportGroupSpacer td { height: 10px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>CANTIDADES TOTALES (POR REFERENTE)</h1>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              <div class="metaLine">Grupo: Varios</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Apellido/s y Nombre/s</th>
+                <th style="text-align:right;">Punteros</th>
+                <th style="text-align:right;">Votantes</th>
+                <th style="text-align:right;">Total de votos (Punteros + Votantes)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2">Totales</td>
+                <td style="text-align:right;">${totalPunteros}</td>
+                <td style="text-align:right;">${totalVotos}</td>
+                <td style="text-align:right;">${totalGeneral}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </body>
+      </html>
+    `
+  }
+
+  function buildPunterosYVotosDeReferenteHtml(options?: { headerPathLine?: string }): string {
+    const now = new Date()
+    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
+    const ref = reportesReferentes.find((r) => r.Id === reportesReferenteId) ?? null
+    const title = ref ? `${ref.Apellido}, ${ref.Nombre}` : 'Referente'
+    const groupName = ref?.LiderNombre ?? '—'
+    const headerPathLine = (options?.headerPathLine ?? '').trim()
+
+    const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    }
+
+    const punteros = [...reportesPunterosDeReferente].sort(sortByApellidoNombre)
+    const votantesByPuntero = new Map<number, PersonaResponseDTO[]>()
+    reportesVotantesDeReferente.forEach((v) => {
+      const pid = v.LiderId ?? 0
+      if (!votantesByPuntero.has(pid)) votantesByPuntero.set(pid, [])
+      votantesByPuntero.get(pid)!.push(v)
+    })
+    votantesByPuntero.forEach((arr) => arr.sort(sortByApellidoNombre))
+
+    const rows: string[] = []
+    punteros.forEach((pun, i) => {
+      rows.push(`
+        <tr class="reportRowPun">
+          <td class="reportNumPun">${i + 1}</td>
+          <td>Puntero</td>
+          <td><strong>${pun.Apellido}, ${pun.Nombre}</strong></td>
+          <td>${pun.DNI}</td>
+          <td>${pun.Telefono ?? '—'}</td>
+          <td>${pun.EscuelaNombre ?? '—'}</td>
+          <td>${pun.NroMesa ?? '—'}</td>
+        </tr>`)
+      const votantes = votantesByPuntero.get(pun.Id) ?? []
+      votantes.forEach((v, j) => {
+        rows.push(`
+        <tr class="reportRowVot">
+          <td class="reportNumVot">${i + 1}.${j + 1}</td>
+          <td class="reportRolVot">Votante</td>
+          <td class="reportIndent2">${v.Apellido}, ${v.Nombre}</td>
+          <td>${v.DNI}</td>
+          <td>${v.Telefono ?? '—'}</td>
+          <td>${v.EscuelaNombre ?? '—'}</td>
+          <td>${v.NroMesa ?? '—'}</td>
+        </tr>`)
+      })
+      if (i < punteros.length - 1) rows.push('<tr class="reportJerarquiaSpacer"><td colspan="6"></td></tr>')
+    })
+
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H14',
+      location: 'src/pages/personas/index.tsx:build-punteros-votos-ref',
+      message: 'Building punteros+votantes for referente',
+      data: {
+        referenteId: reportesReferenteId,
+        punteros: reportesPunterosDeReferente.length,
+        votantes: reportesVotantesDeReferente.length,
+      },
+    })
+
+    return `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charSet="utf-8" />
+          <title>Reporte - Punteros y votantes de referente</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
+            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            .headerLeft { display: flex; flex-direction: column; }
+            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
+            .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+            th { background: #f3f4f6; }
+            tr.reportRowPun { background: #e5e7eb; font-weight: bold; }
+            tr.reportRowVot { background: #fff; }
+            td.reportNumPun { padding-left: 12px; }
+            td.reportNumVot { padding-left: 40px; }
+            td.reportIndent2 { padding-left: 24px; }
+            tr.reportJerarquiaSpacer td { height: 12px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="headerLeft">
+              ${headerPathLine ? `<div class="metaLine">${headerPathLine}</div>` : ''}
+              <h1>PUNTEROS Y VOTANTES DE: ${title}</h1>
+            </div>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              ${headerPathLine ? '' : `<div class="metaLine">Grupo: ${groupName}</div>`}
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Rol</th>
+                <th>Apellido/s y Nombre/s</th>
+                <th>DNI</th>
+                <th>Teléfono</th>
+                <th>Escuela</th>
+                <th>Mesa</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.join('')}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `
+  }
+
+  function viewVotantesDePuntero() {
+    if (reportesPunteroId == null) return
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H16',
+      location: 'src/pages/personas/index.tsx:view-votantes-pun',
+      message: 'View votantes de puntero',
+      data: { punteroId: reportesPunteroId, count: reportesVotantesDePuntero.length },
+    })
+    const pun = reportesPunteros.find((p) => p.Id === reportesPunteroId) ?? null
+    const ref = pun?.LiderId != null ? reportesReferentes.find((r) => r.Id === pun.LiderId) ?? null : null
+    const grupo = ref?.LiderId != null ? reportesGrupos.find((g) => g.Id === ref.LiderId) ?? null : null
+    const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : ref?.LiderNombre ?? '—'
+    const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : '—'
+    const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : '—'
+    const leaderById = new Map(reportesPunteros.map((p) => [p.Id, p]))
+    openReportWindow(
+      buildReportHtml(4, reportesVotantesDePuntero, leaderById, {
+        groupName: grupoDisplay,
+        allLeaders: pun ? [pun] : undefined,
+        includeRolColumn: true,
+        headerPathLine: `Grupo: ${grupoDisplay} -> Referente: ${referenteDisplay} -> Puntero: ${punteroDisplay}`,
+      })
+    )
+  }
+
+  function viewReferentesDeGrupo() {
+    if (reportesGrupoId == null) return
+    const grupo = reportesGrupos.find((g) => g.Id === reportesGrupoId) ?? null
+    const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
+    const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
+    openReportWindow(
+      buildReportHtml(2, list, leaderById, {
+        groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : '—',
+        allLeaders: grupo ? [grupo] : undefined,
+        headerPathLine: grupo ? `Grupo: ${grupo.Apellido}, ${grupo.Nombre}` : 'Grupo: Todos',
+      })
+    )
+  }
+
+  function printReferentesDeGrupo() {
+    if (reportesGrupoId == null) return
+    const grupo = reportesGrupos.find((g) => g.Id === reportesGrupoId) ?? null
+    const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
+    const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.open()
+    w.document.write(
+      buildReportHtml(2, list, leaderById, {
+        groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : '—',
+        allLeaders: grupo ? [grupo] : undefined,
+        headerPathLine: grupo ? `Grupo: ${grupo.Apellido}, ${grupo.Nombre}` : 'Grupo: Todos',
+      })
+    )
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
+  function printVotantesDePuntero() {
+    if (reportesPunteroId == null) return
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H16',
+      location: 'src/pages/personas/index.tsx:print-votantes-pun',
+      message: 'Print votantes de puntero',
+      data: { punteroId: reportesPunteroId, count: reportesVotantesDePuntero.length },
+    })
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.open()
+    const pun = reportesPunteros.find((p) => p.Id === reportesPunteroId) ?? null
+    const ref = pun?.LiderId != null ? reportesReferentes.find((r) => r.Id === pun.LiderId) ?? null : null
+    const grupo = ref?.LiderId != null ? reportesGrupos.find((g) => g.Id === ref.LiderId) ?? null : null
+    const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : ref?.LiderNombre ?? '—'
+    const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : '—'
+    const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : '—'
+    const leaderById = new Map(reportesPunteros.map((p) => [p.Id, p]))
+    w.document.write(
+      buildReportHtml(4, reportesVotantesDePuntero, leaderById, {
+        groupName: grupoDisplay,
+        allLeaders: pun ? [pun] : undefined,
+        includeRolColumn: true,
+        headerPathLine: `Grupo: ${grupoDisplay} -> Referente: ${referenteDisplay} -> Puntero: ${punteroDisplay}`,
+      })
+    )
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
+  function viewCantidadesTotalesReport() {
+    if (cantidadesTotalesRows.length === 0) {
+      window.alert('No hay datos para mostrar.')
+      return
+    }
+    openReportWindow(buildCantidadesTotalesReportHtml())
+  }
+
+  function printCantidadesTotalesReport() {
+    if (cantidadesTotalesRows.length === 0) {
+      window.alert('No hay datos para imprimir.')
+      return
+    }
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.open()
+    w.document.write(buildCantidadesTotalesReportHtml())
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
   function handleViewReport() {
     if (tab.isReportes) return
     if (filteredList.length === 0) {
@@ -550,9 +1838,35 @@ export default function PersonasPage(): React.JSX.Element {
 
     let html: string
 
-    if (tab.rol === 2 || tab.rol === 3 || tab.rol === 4) {
-      html = buildReportHtml(tab.rol, filteredList)
-    } else {
+    if (tab.rol === 2) {
+      fetchReportesData()
+        .then(({ grupos, referentes }) => {
+          const leaderById = new Map(grupos.map((g) => [g.Id, g]))
+          openReportWindow(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios' }))
+        })
+        .catch(() => window.alert('No se pudo generar el reporte.'))
+      return
+    }
+    if (tab.rol === 3) {
+      fetchReportesData()
+        .then(({ grupos, referentes, punteros }) => {
+          // Reusar la misma salida que en "Reportes" → "Todos los punteros"
+          openReportWindow(buildPunterosPorGrupoReportHtml({ grupos, referentes, punteros }))
+        })
+        .catch(() => window.alert('No se pudo generar el reporte.'))
+      return
+    }
+    if (tab.rol === 4) {
+      // Votantes: mostrar Jerarquía completa (por grupo)
+      fetchReportesData()
+        .then(({ grupos, referentes, punteros, votantes }) => {
+          openReportWindow(buildJerarquiaReportHtml({ grupos, referentes, punteros, votantes }))
+        })
+        .catch(() => window.alert('No se pudo generar el reporte.'))
+      return
+    }
+    // Otros roles: listado simple ordenado por apellido
+    {
       // Otros roles: listado simple ordenado por apellido
       const first = filteredList[0]
       const groupTitle = first?.LiderNombre || tab.label
@@ -575,8 +1889,7 @@ export default function PersonasPage(): React.JSX.Element {
           (p, index) => `
             <tr>
               <td>${index + 1}</td>
-              <td>${p.Apellido}</td>
-              <td>${p.Nombre}</td>
+              <td>${p.Apellido}, ${p.Nombre}</td>
               <td>${p.DNI}</td>
               <td>${p.Telefono ?? '—'}</td>
               <td>${p.EscuelaNombre ?? '—'}</td>
@@ -596,6 +1909,7 @@ export default function PersonasPage(): React.JSX.Element {
             .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
             h1 { font-size: 22px; margin: 0; }
             .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
             th { background: #f3f4f6; }
@@ -604,14 +1918,16 @@ export default function PersonasPage(): React.JSX.Element {
         <body>
           <div class="header">
             <h1>Grupo: ${groupTitle}</h1>
-            <div class="meta">Fecha y hora: ${formattedDateTime}</div>
+            <div class="meta">
+              <div>Fecha y hora: ${formattedDateTime}</div>
+              <div class="metaLine">Grupo: ${groupTitle}</div>
+            </div>
           </div>
           <table>
             <thead>
               <tr>
                 <th>#</th>
-                <th>Apellido</th>
-                <th>Nombre</th>
+                <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
                 <th>Escuela</th>
@@ -642,14 +1958,54 @@ export default function PersonasPage(): React.JSX.Element {
 
     let html: string
 
-    if (tab.rol === 2 || tab.rol === 3 || tab.rol === 4) {
-      html = buildReportHtml(tab.rol, filteredList)
-    } else {
+    if (tab.rol === 2) {
+      fetchReportesData()
+        .then(({ grupos, referentes }) => {
+          const leaderById = new Map(grupos.map((g) => [g.Id, g]))
+          const w = window.open('', '_blank')
+          if (!w) return
+          w.document.open()
+          w.document.write(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios' }))
+          w.document.close()
+          w.focus()
+          w.print()
+        })
+        .catch(() => window.alert('No se pudo imprimir el reporte.'))
+      return
+    }
+    if (tab.rol === 3) {
+      fetchReportesData()
+        .then(({ grupos, referentes, punteros }) => {
+          const w = window.open('', '_blank')
+          if (!w) return
+          w.document.open()
+          w.document.write(buildPunterosPorGrupoReportHtml({ grupos, referentes, punteros }))
+          w.document.close()
+          w.focus()
+          w.print()
+        })
+        .catch(() => window.alert('No se pudo imprimir el reporte.'))
+      return
+    }
+    if (tab.rol === 4) {
+      fetchReportesData()
+        .then(({ grupos, referentes, punteros, votantes }) => {
+          const w = window.open('', '_blank')
+          if (!w) return
+          w.document.open()
+          w.document.write(buildJerarquiaReportHtml({ grupos, referentes, punteros, votantes }))
+          w.document.close()
+          w.focus()
+          w.print()
+        })
+        .catch(() => window.alert('No se pudo imprimir el reporte.'))
+      return
+    }
+    // Otros roles: listado simple ordenado por apellido
+    {
       const first = filteredList[0]
       const groupTitle =
-        tab.rol === 2 || tab.rol === 4
-          ? first?.LiderNombre || 'Grupo sin nombre'
-          : tab.label
+        first?.LiderNombre || tab.label || 'Grupo sin nombre'
 
       const sorted = [...filteredList].sort((a, b) => {
         const ap = (a.Apellido || '').toLowerCase()
@@ -668,8 +2024,7 @@ export default function PersonasPage(): React.JSX.Element {
           (p, index) => `
             <tr>
               <td>${index + 1}</td>
-              <td>${p.Apellido}</td>
-              <td>${p.Nombre}</td>
+              <td>${p.Apellido}, ${p.Nombre}</td>
               <td>${p.DNI}</td>
               <td>${p.Telefono ?? '—'}</td>
               <td>${p.EscuelaNombre ?? '—'}</td>
@@ -689,6 +2044,7 @@ export default function PersonasPage(): React.JSX.Element {
             .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
             h1 { font-size: 22px; margin: 0; }
             .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
             th { background: #f3f4f6; }
@@ -697,14 +2053,16 @@ export default function PersonasPage(): React.JSX.Element {
         <body>
           <div class="header">
             <h1>Grupo: ${groupTitle}</h1>
-            <div class="meta">Fecha y hora: ${formattedDateTime}</div>
+            <div class="meta">
+              <div>Fecha y hora: ${formattedDateTime}</div>
+              <div class="metaLine">Grupo: ${groupTitle}</div>
+            </div>
           </div>
           <table>
             <thead>
               <tr>
                 <th>#</th>
-                <th>Apellido</th>
-                <th>Nombre</th>
+                <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
                 <th>Escuela</th>
@@ -730,8 +2088,44 @@ export default function PersonasPage(): React.JSX.Element {
   }
 
   function openEdit(entity: PersonaResponseDTO) {
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H5',
+      location: 'src/pages/personas/index.tsx:openEdit',
+      message: 'Opening edit form',
+      data: {
+        entityId: entity.Id,
+        entityRol: entity.Rol,
+        entityLiderId: entity.LiderId,
+        entityLiderNombre: entity.LiderNombre,
+        tabId: tab.id,
+        tabRol: tab.rol,
+        tabLeaderRole: tab.leaderRole,
+      },
+    })
     setEditingId(entity.Id)
-    setForm(formFromEntity(entity))
+    const nextForm = formFromEntity(entity)
+    agentLog({
+      runId: 'post-fix',
+      hypothesisId: 'H2',
+      location: 'src/pages/personas/index.tsx:openEdit-nextForm',
+      message: 'Computed form from entity',
+      data: { nextFormLiderId: nextForm.LiderId ?? null, nextFormRol: nextForm.Rol },
+    })
+    setForm(nextForm)
+    if (tab.leaderRole != null) {
+      setLeaderDropdownOpen(false)
+      setLeaderIsTyping(false)
+      setLeaderFilterText('')
+      setLeaderSelectVisible(false)
+      agentLog({
+        runId: 'post-fix',
+        hypothesisId: 'H6',
+        location: 'src/pages/personas/index.tsx:openEdit-leaderText',
+        message: 'Edit opened with existing leader',
+        data: { entityId: entity.Id, liderId: entity.LiderId ?? null, liderNombre: entity.LiderNombre ?? '' },
+      })
+    }
     setShowForm(true)
     setError(null)
     setSuccessMessage(null)
@@ -744,6 +2138,7 @@ export default function PersonasPage(): React.JSX.Element {
     setError(null)
     setLeaderFilterText('')
     setLeaderDropdownOpen(false)
+    setLeaderSelectVisible(false)
   }
 
   function hasFormData(): boolean {
@@ -845,6 +2240,13 @@ export default function PersonasPage(): React.JSX.Element {
   }
 
   const leaderDisplayOpts = tab.rol === 4 ? { showReferente: true } : undefined
+
+  const selectedLeaderDisplay = React.useMemo(() => {
+    if (tab.leaderRole == null) return ''
+    if (form.LiderId == null) return ''
+    const match = leaders.find((l) => l.Id === form.LiderId)
+    return match ? getLeaderDisplay(match, leaderDisplayOpts) : ''
+  }, [tab.leaderRole, form.LiderId, leaders, leaderDisplayOpts])
 
   const sortLeadersByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
     const ap = (a.Apellido || '').toLowerCase()
@@ -1024,6 +2426,10 @@ export default function PersonasPage(): React.JSX.Element {
             ) : (
               <div className="reportesGrid">
                 <div className="reportesCard">
+                  <span className="reportesCardLabel">Grupos</span>
+                  <span className="reportesCardValue">{stats.grupos}</span>
+                </div>
+                <div className="reportesCard">
                   <span className="reportesCardLabel">Referentes</span>
                   <span className="reportesCardValue">{stats.referentes}</span>
                 </div>
@@ -1046,53 +2452,297 @@ export default function PersonasPage(): React.JSX.Element {
             {reportesListsLoading ? (
               <p className="personasLoading">Cargando listados...</p>
             ) : (
-              <div className="reportesListadosGrid">
-                <div className="reportesListadoCard">
-                  <span className="reportesListadoCardLabel">Todos los referentes</span>
-                  <span className="reportesListadoCardCount">{reportesReferentes.length} referentes</span>
-                  <div className="reportesListadoCardActions">
-                    <button type="button" className="personasButton personasButtonSecondary" onClick={() => viewReportFromReportes(2)} disabled={reportesReferentes.length === 0}>
-                      Ver reporte
-                    </button>
-                    <button type="button" className="personasButton" onClick={() => printReportFromReportes(2)} disabled={reportesReferentes.length === 0}>
-                      Imprimir reporte
-                    </button>
+              <div className="reportesListadosWrap">
+                <div className="reportesRow reportesRowTop">
+                  <div className="reportesListadoCard">
+                    <span className="reportesListadoCardLabel">Todos los referentes</span>
+                    <span className="reportesListadoCardCount">{reportesReferentes.length} referentes</span>
+                    <div className="reportesListadoCardActions">
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary personasIconButton"
+                        onClick={() => viewReportFromReportes(2)}
+                        disabled={reportesReferentes.length === 0}
+                        title="Ver reporte"
+                        aria-label="Ver reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasIconButton"
+                        onClick={() => printReportFromReportes(2)}
+                        disabled={reportesReferentes.length === 0}
+                        title="Imprimir reporte"
+                        aria-label="Imprimir reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M6 9V3h12v6" />
+                          <path d="M6 17v4h12v-4" />
+                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                          <path d="M9 17h6" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="reportesListadoCard">
+                    <span className="reportesListadoCardLabel">Todos los punteros</span>
+                    <span className="reportesListadoCardCount">{reportesPunteros.length} punteros</span>
+                    <div className="reportesListadoCardActions">
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary personasIconButton"
+                        onClick={() => viewReportFromReportes(3)}
+                        disabled={reportesPunteros.length === 0}
+                        title="Ver reporte"
+                        aria-label="Ver reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasIconButton"
+                        onClick={() => printReportFromReportes(3)}
+                        disabled={reportesPunteros.length === 0}
+                        title="Imprimir reporte"
+                        aria-label="Imprimir reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M6 9V3h12v6" />
+                          <path d="M6 17v4h12v-4" />
+                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                          <path d="M9 17h6" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="reportesListadoCard reportesListadoCardJerarquia">
+                    <span className="reportesListadoCardLabel">Todos los votantes</span>
+                    <span className="reportesListadoCardCount">{reportesVotantes.length} votantes</span>
+                    <div className="reportesListadoCardActions">
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary personasIconButton"
+                        onClick={viewJerarquiaReport}
+                        title="Ver reporte"
+                        aria-label="Ver reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasIconButton"
+                        onClick={printJerarquiaReport}
+                        title="Imprimir reporte"
+                        aria-label="Imprimir reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M6 9V3h12v6" />
+                          <path d="M6 17v4h12v-4" />
+                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                          <path d="M9 17h6" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="reportesListadoCard">
-                  <span className="reportesListadoCardLabel">Todos los punteros</span>
-                  <span className="reportesListadoCardCount">{reportesPunteros.length} punteros</span>
-                  <div className="reportesListadoCardActions">
-                    <button type="button" className="personasButton personasButtonSecondary" onClick={() => viewReportFromReportes(3)} disabled={reportesPunteros.length === 0}>
-                      Ver reporte
-                    </button>
-                    <button type="button" className="personasButton" onClick={() => printReportFromReportes(3)} disabled={reportesPunteros.length === 0}>
-                      Imprimir reporte
-                    </button>
+
+                <div className="reportesRow reportesRowMid">
+                  <div className="reportesListadoCard reportesListadoCardTotales">
+                    <span className="reportesListadoCardLabel">Cantidades totales</span>
+                    <span className="reportesListadoCardCount">
+                      {cantidadesTotalesRows.length} referentes (punteros y votos por referente)
+                    </span>
+                    <div className="reportesListadoCardActions">
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary personasIconButton"
+                        onClick={viewCantidadesTotalesReport}
+                        disabled={cantidadesTotalesRows.length === 0}
+                        title="Ver reporte"
+                        aria-label="Ver reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasIconButton"
+                        onClick={printCantidadesTotalesReport}
+                        disabled={cantidadesTotalesRows.length === 0}
+                        title="Imprimir reporte"
+                        aria-label="Imprimir reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M6 9V3h12v6" />
+                          <path d="M6 17v4h12v-4" />
+                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                          <path d="M9 17h6" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="reportesListadoCard reportesListadoCardVehiculos">
+                    <span className="reportesListadoCardLabel">Vehículos</span>
+                    <span className="reportesListadoCardCount">Próximamente</span>
+                    <div className="reportesListadoCardActions">
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary personasIconButton"
+                        disabled
+                        title="Ver reporte"
+                        aria-label="Ver reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasIconButton"
+                        disabled
+                        title="Imprimir reporte"
+                        aria-label="Imprimir reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M6 9V3h12v6" />
+                          <path d="M6 17v4h12v-4" />
+                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                          <path d="M9 17h6" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="reportesListadoCard">
-                  <span className="reportesListadoCardLabel">Todos los votantes</span>
-                  <span className="reportesListadoCardCount">{reportesVotantes.length} votantes</span>
-                  <div className="reportesListadoCardActions">
-                    <button type="button" className="personasButton personasButtonSecondary" onClick={() => viewReportFromReportes(4)} disabled={reportesVotantes.length === 0}>
-                      Ver reporte
-                    </button>
-                    <button type="button" className="personasButton" onClick={() => printReportFromReportes(4)} disabled={reportesVotantes.length === 0}>
-                      Imprimir reporte
-                    </button>
-                  </div>
-                </div>
-                <div className="reportesListadoCard reportesListadoCardJerarquia">
-                  <span className="reportesListadoCardLabel">Jerarquía completa</span>
-                  <span className="reportesListadoCardCount">Referentes → Punteros → Votantes</span>
-                  <div className="reportesListadoCardActions">
-                    <button type="button" className="personasButton personasButtonSecondary" onClick={viewJerarquiaReport}>
-                      Ver reporte
-                    </button>
-                    <button type="button" className="personasButton" onClick={printJerarquiaReport}>
-                      Imprimir reporte
-                    </button>
+
+                <div className="reportesRow reportesRowBottom">
+                  <div className="reportesListadoCard reportesListadoCardFiltros">
+                    <span className="reportesListadoCardLabel">Reportes por selección</span>
+                    <span className="reportesListadoCardCount">
+                      Elegí grupo, referente y/o puntero para generar listados específicos.
+                    </span>
+                    <div className="reportesFilters">
+                    <label className="reportesFilter">
+                      <span>Grupo</span>
+                      <select
+                        className="personasInput"
+                        value={reportesGrupoId ?? ''}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? null : Number(e.target.value)
+                          setReportesGrupoId(val)
+                          agentLog({
+                            runId: 'pre-fix',
+                            hypothesisId: 'H26',
+                            location: 'src/pages/personas/index.tsx:reportes-select-gru',
+                            message: 'Selected grupo for reports',
+                            data: { grupoId: val },
+                          })
+                        }}
+                      >
+                        <option value="">Seleccione grupo</option>
+                        {reportesGruposSorted.map((g) => (
+                          <option key={`rep-gru-${g.Id}`} value={g.Id}>
+                            {g.Apellido} {g.Nombre} (DNI {g.DNI})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                      <label className="reportesFilter">
+                        <span>Referente</span>
+                        <select
+                          className="personasInput"
+                          value={reportesReferenteId ?? ''}
+                        disabled={reportesReferenteSelectDisabled}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? null : Number(e.target.value)
+                            setReportesReferenteId(val)
+                            agentLog({
+                              runId: 'pre-fix',
+                              hypothesisId: 'H17',
+                              location: 'src/pages/personas/index.tsx:reportes-select-ref',
+                              message: 'Selected referente for reports',
+                              data: { referenteId: val },
+                            })
+                          }}
+                        >
+                          <option value="">Seleccione referente</option>
+                        {reportesReferentesOptions.map((r) => (
+                            <option key={`rep-ref-${r.Id}`} value={r.Id}>
+                              {r.Apellido} {r.Nombre} (DNI {r.DNI})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="reportesFilter">
+                        <span>Puntero</span>
+                        <select
+                          className="personasInput"
+                          value={reportesPunteroId ?? ''}
+                        disabled={reportesPunteroSelectDisabled}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? null : Number(e.target.value)
+                            setReportesPunteroId(val)
+                            agentLog({
+                              runId: 'pre-fix',
+                              hypothesisId: 'H18',
+                              location: 'src/pages/personas/index.tsx:reportes-select-pun',
+                              message: 'Selected puntero for reports',
+                              data: { punteroId: val },
+                            })
+                          }}
+                        >
+                          <option value="">Seleccione puntero</option>
+                          {reportesPunterosOptions.map((p) => (
+                            <option key={`rep-pun-${p.Id}`} value={p.Id}>
+                              {p.Apellido} {p.Nombre} (DNI {p.DNI})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="reportesListadoCardActions">
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary personasIconButton reportesActionButton"
+                        onClick={viewReportesPorSeleccion}
+                        disabled={reportesGrupos.length === 0}
+                        title="Ver listado"
+                        aria-label="Ver listado"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasIconButton reportesActionButton"
+                        onClick={printReportesPorSeleccion}
+                        disabled={reportesGrupos.length === 0}
+                        title="Imprimir listado"
+                        aria-label="Imprimir listado"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M6 9V3h12v6" />
+                          <path d="M6 17v4h12v-4" />
+                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                          <path d="M9 17h6" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1202,46 +2852,165 @@ export default function PersonasPage(): React.JSX.Element {
                     className="personasLeaderComboWrap"
                     ref={leaderDropdownRef}
                   >
-                    <input
-                      type="text"
-                      className="personasInput personasLeaderInput"
-                      placeholder={`Escribí nombre, apellido o DNI para buscar...`}
-                      value={leaderFilterText}
-                      onChange={(e) => {
-                        const value = e.target.value
-                        setLeaderFilterText(value)
-                        if (value.trim() === '') {
-                          setLeaderDropdownOpen(false)
-                          setForm((s) => ({ ...s, LiderId: null }))
-                        } else {
-                          setLeaderDropdownOpen(true)
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (
-                          (e.key === 'Tab' || e.key === 'Enter') &&
-                          leaderDropdownOpen &&
-                          filteredLeadersForAutocomplete.length > 0
-                        ) {
-                          e.preventDefault()
-                          const first = filteredLeadersForAutocomplete[0]
-                          setForm((s) => ({ ...s, LiderId: first.Id }))
-                          setLeaderFilterText(getLeaderDisplay(first, leaderDisplayOpts))
-                          setLeaderDropdownOpen(false)
-                          if (e.key === 'Tab') {
+                    {!leaderSelectVisible ? (
+                      <>
+                        <input
+                          type="text"
+                          className="personasInput personasLeaderInput"
+                          placeholder={selectedLeaderDisplay || `Escribí nombre, apellido o DNI para buscar...`}
+                          value={leaderIsTyping ? leaderFilterText : ''}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            setLeaderIsTyping(true)
+                            setLeaderFilterText(value)
+                            if (value.trim() === '') {
+                              setLeaderDropdownOpen(false)
+                              setForm((s) => ({ ...s, LiderId: null }))
+                            } else {
+                              // si el usuario escribe, dejamos el ID seleccionado en null hasta que elija una opción
+                              setForm((s) => ({ ...s, LiderId: null }))
+                              setLeaderDropdownOpen(true)
+                            }
+                          }}
+                          onFocus={() => {
+                            setLeaderIsTyping(true)
+                            setLeaderDropdownOpen(leaderFilterText.trim().length > 0)
+                          }}
+                          onKeyDown={(e) => {
+                            if (
+                              (e.key === 'Backspace' || e.key === 'Delete') &&
+                              !leaderDropdownOpen &&
+                              (leaderFilterText ?? '').trim().length === 0 &&
+                              form.LiderId != null
+                            ) {
+                              e.preventDefault()
+                              setForm((s) => ({ ...s, LiderId: null }))
+                              setLeaderIsTyping(true)
+                              setLeaderFilterText('')
+                              agentLog({
+                                runId: 'post-fix',
+                                hypothesisId: 'H13',
+                                location: 'src/pages/personas/index.tsx:leader-clear-backspace',
+                                message: 'Cleared selected leader via backspace/delete',
+                                data: { prevLiderId: form.LiderId },
+                              })
+                              return
+                            }
+                            if (
+                              (e.key === 'Tab' || e.key === 'Enter') &&
+                              leaderDropdownOpen &&
+                              filteredLeadersForAutocomplete.length > 0
+                            ) {
+                              e.preventDefault()
+                              const first = filteredLeadersForAutocomplete[0]
+                              setForm((s) => ({ ...s, LiderId: first.Id }))
+                              setLeaderFilterText('')
+                              setLeaderIsTyping(false)
+                              setLeaderDropdownOpen(false)
+                              setLeaderSelectVisible(false)
+                              agentLog({
+                                runId: 'post-fix',
+                                hypothesisId: 'H8',
+                                location: 'src/pages/personas/index.tsx:leader-autocomplete-enter',
+                                message: 'Selected leader from autocomplete (enter/tab)',
+                                data: { liderId: first.Id },
+                              })
+                              if (e.key === 'Tab') {
+                                setTimeout(() => leaderSelectRef.current?.focus(), 0)
+                              }
+                            }
+                          }}
+                          onBlur={() => {
+                            if (leaderBlurTimerRef.current) clearTimeout(leaderBlurTimerRef.current)
+                            leaderBlurTimerRef.current = setTimeout(() => {
+                              setLeaderDropdownOpen(false)
+                              setLeaderIsTyping(false)
+                              setLeaderFilterText('')
+                            }, 180)
+                          }}
+                          disabled={leadersLoading}
+                          autoComplete="off"
+                          aria-autocomplete="list"
+                          aria-expanded={leaderDropdownOpen}
+                        />
+                        <button
+                          type="button"
+                          className="personasLeaderHelpBtn personasLeaderHelpBtnPrimary"
+                          title="Si no recordás el Nombre o Apellido, buscalo en la lista desplegable"
+                          aria-label="Mostrar lista desplegable"
+                          onClick={() => {
+                            setLeaderSelectVisible(true)
+                            setLeaderDropdownOpen(false)
+                            setLeaderIsTyping(false)
+                            setLeaderFilterText('')
+                            agentLog({
+                              runId: 'post-fix',
+                              hypothesisId: 'H11',
+                              location: 'src/pages/personas/index.tsx:leader-help-toggle',
+                              message: 'Show leader select (hide input)',
+                              data: { nextVisible: true },
+                            })
                             setTimeout(() => leaderSelectRef.current?.focus(), 0)
-                          }
-                        }
-                      }}
-                      onBlur={() => {
-                        if (leaderBlurTimerRef.current) clearTimeout(leaderBlurTimerRef.current)
-                        leaderBlurTimerRef.current = setTimeout(() => setLeaderDropdownOpen(false), 180)
-                      }}
-                      disabled={leadersLoading}
-                      autoComplete="off"
-                      aria-autocomplete="list"
-                      aria-expanded={leaderDropdownOpen}
-                    />
+                          }}
+                        >
+                          <span className="personasLeaderHelpIcon" aria-hidden="true">▾</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <select
+                          ref={leaderSelectRef}
+                          className="personasInput personasLeaderSelect personasLeaderSelectInline personasLeaderSelectOnly"
+                          value={form.LiderId ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? null : Number(e.target.value)
+                            setForm((s) => ({ ...s, LiderId: val }))
+                            setLeaderIsTyping(false)
+                            setLeaderFilterText('')
+                            setLeaderDropdownOpen(false)
+                            agentLog({
+                              runId: 'post-fix',
+                              hypothesisId: 'H10',
+                              location: 'src/pages/personas/index.tsx:leader-select-change',
+                              message: 'Selected leader from select',
+                              data: { liderId: val },
+                            })
+                          }}
+                          disabled={leadersLoading}
+                          title={`Lista desplegable de ${leaderLabel}`}
+                        >
+                          <option value="">
+                            {leadersLoading ? 'Cargando...' : `Seleccione un ${leaderLabel}`}
+                          </option>
+                          {leadersSorted.map((p) => (
+                            <option key={`leader-${p.Id}`} value={p.Id}>
+                              {getLeaderDisplay(p, leaderDisplayOpts)}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="personasLeaderHelpBtn"
+                          title="Volver a modo búsqueda (tipeando)"
+                          aria-label="Volver a modo búsqueda"
+                          onClick={() => {
+                            setLeaderSelectVisible(false)
+                            setLeaderDropdownOpen(false)
+                            setLeaderIsTyping(false)
+                            setLeaderFilterText('')
+                            agentLog({
+                              runId: 'post-fix',
+                              hypothesisId: 'H12',
+                              location: 'src/pages/personas/index.tsx:leader-help-toggle-back',
+                              message: 'Hide leader select (show input)',
+                              data: { nextVisible: false },
+                            })
+                          }}
+                        >
+                          Volver a búsqueda
+                        </button>
+                      </>
+                    )}
                     {leaderDropdownOpen && !leadersLoading && (
                       <ul
                         className="personasLeaderDropdown"
@@ -1259,8 +3028,17 @@ export default function PersonasPage(): React.JSX.Element {
                               onMouseDown={() => {
                                 if (leaderBlurTimerRef.current) clearTimeout(leaderBlurTimerRef.current)
                                 setForm((s) => ({ ...s, LiderId: p.Id }))
-                                setLeaderFilterText(getLeaderDisplay(p, leaderDisplayOpts))
+                                setLeaderFilterText('')
+                                setLeaderIsTyping(false)
                                 setLeaderDropdownOpen(false)
+                                setLeaderSelectVisible(false)
+                                agentLog({
+                                  runId: 'post-fix',
+                                  hypothesisId: 'H9',
+                                  location: 'src/pages/personas/index.tsx:leader-autocomplete-click',
+                                  message: 'Selected leader from autocomplete (click)',
+                                  data: { liderId: p.Id },
+                                })
                               }}
                             >
                               {getLeaderDisplay(p, leaderDisplayOpts)}
@@ -1270,32 +3048,6 @@ export default function PersonasPage(): React.JSX.Element {
                       </ul>
                     )}
                   </div>
-                  <select
-                    ref={leaderSelectRef}
-                    className="personasInput personasLeaderSelect"
-                    value={form.LiderId ?? ''}
-                    onChange={(e) => {
-                      const val = e.target.value === '' ? null : Number(e.target.value)
-                      setForm((s) => ({ ...s, LiderId: val }))
-                      if (val == null) {
-                        setLeaderFilterText('')
-                      } else {
-                        const p = leaders.find((l) => l.Id === val)
-                        setLeaderFilterText(p ? getLeaderDisplay(p, leaderDisplayOpts) : '')
-                      }
-                    }}
-                    disabled={leadersLoading}
-                    title={`O elegí un ${leaderLabel} de la lista`}
-                  >
-                    <option value="">
-                      {leadersLoading ? 'Cargando...' : `Seleccione un ${leaderLabel}`}
-                    </option>
-                    {leadersSorted.map((p) => (
-                      <option key={`leader-${p.Id}`} value={p.Id}>
-                        {getLeaderDisplay(p, leaderDisplayOpts)}
-                      </option>
-                    ))}
-                  </select>
                   {!leadersLoading && leaders.length === 0 && tab.leaderRole != null && (
                     <span className="personasFieldHint">
                       No hay {leaderLabel.toLowerCase()}s cargados. Cree primero uno en la pestaña
