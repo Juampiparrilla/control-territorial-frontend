@@ -83,10 +83,12 @@
 }
 
 .personasTabIcon {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
+  overflow: visible;
 }
+
 
 .personasTabLabel {
   white-space: nowrap;
@@ -115,7 +117,8 @@
 }
 
 .personasPanelTitleBlock h2 {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   align-items: center;
   gap: 8px;
   font-size: 1.5rem;
@@ -128,6 +131,7 @@
   height: 24px;
   color: var(--accent);
 }
+
 
 .personasPanelDescription {
   font-size: 0.875rem;
@@ -484,6 +488,353 @@
   background: #b71c1c !important;
   color: #fff !important;
 }
+
+/* ----- Modal: Importar Padrón ----- */
+.personasPadronOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.personasPadronModal {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 24px;
+  width: 100%;
+  max-width: 720px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border-left: 4px solid var(--accent);
+}
+
+.personasPadronModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.personasPadronModalTitle {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.personasPadronModalSubtitle {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.personasPadronClose {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.personasPadronClose:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.personasPadronBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ----- Modal: Gestión de Administradores ----- */
+.personasAdminOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.personasAdminModal {
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 24px;
+  width: 100%;
+  max-width: 980px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border-left: 4px solid var(--accent);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.personasAdminModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.personasAdminModalTitle {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.personasAdminModalSubtitle {
+  margin: 6px 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.personasAdminModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ----- Ayuda - Inicio (modal) ----- */
+.personasInicioHeader {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+.personasInicioHelpBtnInTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 0.9375rem;
+  margin-left: auto;
+  margin-right: 0;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.personasHelpInfoIBadge {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  line-height: 1;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.personasInicioHelpBtnInTitle:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.personasInicioHelpBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.personasHelpAppOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  z-index: 1100;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.personasHelpAppModal {
+  background: var(--bg);
+  border-radius: 10px 0 0 10px;
+  padding: 0;
+  width: 500px;
+  max-width: 100%;
+  height: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border-left: 4px solid var(--accent);
+  overflow: auto;
+  animation: personasHelpDrawerIn 0.18s ease-out;
+}
+
+@keyframes personasHelpDrawerIn {
+  from { transform: translateX(12px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (max-width: 760px) {
+  .personasHelpAppModal {
+    width: 100%;
+    border-radius: 10px 10px 0 0;
+    animation: none;
+  }
+  .personasHelpAppOverlay {
+    justify-content: center;
+    align-items: flex-end;
+  }
+}
+
+.personasHelpAppHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.personasHelpAppTitle {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.personasHelpAppBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px;
+}
+
+.personasHelpDrawerClose {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.personasHelpDrawerClose:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.personasHelpAppList {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 0.98rem;
+}
+
+.personasHelpAppSection > strong {
+  display: block;
+  margin: 0 0 6px;
+}
+
+.personasHelpAppText {
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 1rem;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.personasAdminTopBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.personasAdminSearchWrap {
+  max-width: 300px;
+  width: 300px;
+  flex: 0 1 300px;
+  margin-right: auto;
+}
+
+.personasAdminNewBtn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* ----- Ayuda: formato Excel ----- */
+.personasHelpWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.personasHelpIcon {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: default;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.personasHelpTooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 340px;
+  max-width: 80vw;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  box-shadow: var(--shadow);
+  z-index: 1001;
+  display: none;
+}
+
+.personasHelpWrap:hover .personasHelpTooltip {
+  display: block;
+}
+
 
 .personasForm {
   display: grid;

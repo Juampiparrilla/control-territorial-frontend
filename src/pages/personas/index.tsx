@@ -3,9 +3,18 @@ import {
   createPersona,
   deletePersona,
   getPersonasByRole,
+  matchPadronByDni,
+  syncPadronActive,
   updatePersona,
+  uploadPadron,
 } from './request'
-import { PERSONAS_TABS, type CreatePersonaDTO, type PersonaResponseDTO, type PersonRole } from './type'
+import {
+  PERSONAS_TABS,
+  type CreatePersonaDTO,
+  type PersonaResponseDTO,
+  type PersonRole,
+  type PadronUploadResultDTO,
+} from './type'
 import './styles.css'
 
 /** Búsqueda: letras (con tildes), números, sin espacio inicial y un solo espacio entre palabras */
@@ -106,11 +115,260 @@ export default function PersonasPage(): React.JSX.Element {
   const [reportesGrupoId, setReportesGrupoId] = React.useState<number | null>(null)
   const [reportesReferenteId, setReportesReferenteId] = React.useState<number | null>(null)
   const [reportesPunteroId, setReportesPunteroId] = React.useState<number | null>(null)
+  const [padronFile, setPadronFile] = React.useState<File | null>(null)
+  const [padronStep, setPadronStep] = React.useState<1 | 2>(1)
+  const [showPadronModal, setShowPadronModal] = React.useState(false)
+  const [padronUploadLoading, setPadronUploadLoading] = React.useState(false)
+  const [padronUploadError, setPadronUploadError] = React.useState<string | null>(null)
+  const [padronUploadResult, setPadronUploadResult] = React.useState<PadronUploadResultDTO | null>(null)
+  const [padronSyncLoading, setPadronSyncLoading] = React.useState(false)
+  const [padronSyncError, setPadronSyncError] = React.useState<string | null>(null)
+  const [padronSyncResult, setPadronSyncResult] = React.useState<PadronUploadResultDTO | null>(null)
+  const padronLastLookupDniRef = React.useRef<string>('')
+  const [dniAutoFillLoading, setDniAutoFillLoading] = React.useState(false)
+
+  const [showAdminModal, setShowAdminModal] = React.useState(false)
+  const [adminList, setAdminList] = React.useState<PersonaResponseDTO[]>([])
+  const [adminListLoading, setAdminListLoading] = React.useState(false)
+  const [adminSearch, setAdminSearch] = React.useState('')
+  const [adminPage, setAdminPage] = React.useState(1)
+  const [adminPerPage, setAdminPerPage] = React.useState(10)
+  const [adminShowForm, setAdminShowForm] = React.useState(false)
+  const [adminEditingId, setAdminEditingId] = React.useState<number | null>(null)
+  const [adminForm, setAdminForm] = React.useState<CreatePersonaDTO>(() => emptyForm(0))
+  const [adminSubmitting, setAdminSubmitting] = React.useState(false)
+  const [adminError, setAdminError] = React.useState<string | null>(null)
+  const [adminSuccess, setAdminSuccess] = React.useState<string | null>(null)
+
+  const [showAppHelpModal, setShowAppHelpModal] = React.useState(false)
+
+  function resetPadronImportState() {
+    setPadronStep(1)
+    setPadronFile(null)
+    setPadronUploadLoading(false)
+    setPadronUploadError(null)
+    setPadronUploadResult(null)
+    setPadronSyncLoading(false)
+    setPadronSyncError(null)
+    setPadronSyncResult(null)
+  }
+
+  function openPadronImportModal() {
+    resetPadronImportState()
+    setShowPadronModal(true)
+  }
+
+  function closePadronImportModal() {
+    setShowPadronModal(false)
+  }
+
+  const fetchAdmins = React.useCallback(() => {
+    setAdminListLoading(true)
+    getPersonasByRole(0)
+      .then((res) => setAdminList(res))
+      .catch(() => setAdminList([]))
+      .finally(() => setAdminListLoading(false))
+  }, [])
+
+  function openAdminModal() {
+    setAdminError(null)
+    setAdminSuccess(null)
+    setAdminSearch('')
+    setAdminPage(1)
+    setAdminPerPage(10)
+    setAdminShowForm(false)
+    setAdminEditingId(null)
+    setAdminForm(emptyForm(0))
+    setShowAdminModal(true)
+    fetchAdmins()
+  }
+
+  function closeAdminModal() {
+    setShowAdminModal(false)
+  }
+
+  function openAppHelpModal() {
+    setShowAppHelpModal(true)
+    // #region agent log
+    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:openAppHelpModal',message:'openAppHelpModal() called',data:{},timestamp:Date.now(),hypothesisId:'H1_help_drawer_open'},)}).catch(()=>{});
+    // #endregion
+    requestAnimationFrame(() => {
+      // #region agent log
+      const drawerEl = document.querySelector<HTMLElement>('.personasHelpAppModal')
+      const closeBtnEl = document.querySelector<HTMLElement>('.personasHelpDrawerClose')
+      const helpBtnSvg = document.querySelector<HTMLElement>('.personasInicioHelpBtnInTitle svg')
+      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:openAppHelpModal:measure',message:'Drawer measurements',data:{drawerWidth:drawerEl?.getBoundingClientRect().width,drawerHeight:drawerEl?.getBoundingClientRect().height,closeBtnWidth:closeBtnEl?.getBoundingClientRect().width,closeBtnHeight:closeBtnEl?.getBoundingClientRect().height,helpBtnSvgWidth:helpBtnSvg?.getBoundingClientRect().width,helpBtnSvgHeight:helpBtnSvg?.getBoundingClientRect().height},timestamp:Date.now(),hypothesisId:'H2_layout_measurements'},)}).catch(()=>{});
+      // #endregion
+    })
+  }
+
+  function closeAppHelpModal() {
+    setShowAppHelpModal(false)
+  }
+
+  function openAdminCreate() {
+    setAdminError(null)
+    setAdminSuccess(null)
+    setAdminEditingId(null)
+    setAdminForm(emptyForm(0))
+    setAdminShowForm(true)
+  }
+
+  function openAdminEdit(row: PersonaResponseDTO) {
+    setAdminError(null)
+    setAdminSuccess(null)
+    setAdminEditingId(row.Id)
+    setAdminForm({
+      Nombre: row.Nombre ?? '',
+      Apellido: row.Apellido ?? '',
+      DNI: row.DNI ?? '',
+      Rol: 0,
+      Telefono: row.Telefono ?? '',
+      Escuela: row.EscuelaNombre ?? '',
+      Mesa: row.NroMesa != null ? String(row.NroMesa) : '',
+      LiderId: null,
+    })
+    setAdminShowForm(true)
+  }
+
+  async function handleAdminDelete(row: PersonaResponseDTO) {
+    try {
+      await deletePersona(row.Id)
+      setAdminSuccess('Administrador eliminado.')
+      fetchAdmins()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error al eliminar.'
+      setAdminError(msg)
+    }
+  }
+
+  async function handleAdminSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setAdminError(null)
+    setAdminSuccess(null)
+
+    const payload: CreatePersonaDTO = {
+      Nombre: sanitizeNombreApellido(adminForm.Nombre ?? ''),
+      Apellido: sanitizeNombreApellido(adminForm.Apellido ?? ''),
+      DNI: sanitizeDNI(adminForm.DNI ?? ''),
+      Rol: 0,
+      Telefono: normalizeOptionalString(adminForm.Telefono ?? ''),
+      Escuela: normalizeOptionalString(adminForm.Escuela ?? ''),
+      Mesa: normalizeOptionalString(adminForm.Mesa ?? ''),
+      LiderId: null,
+    }
+
+    if (!payload.Nombre.trim() || !payload.Apellido.trim() || !payload.DNI.trim()) {
+      setAdminError('Completá Nombre, Apellido y DNI.')
+      return
+    }
+
+    setAdminSubmitting(true)
+    try {
+      if (adminEditingId == null) {
+        await createPersona(payload)
+        setAdminSuccess('Administrador creado.')
+      } else {
+        await updatePersona(adminEditingId, payload)
+        setAdminSuccess('Administrador actualizado.')
+      }
+      setAdminShowForm(false)
+      setAdminEditingId(null)
+      fetchAdmins()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al guardar.'
+      setAdminError(msg)
+    } finally {
+      setAdminSubmitting(false)
+    }
+  }
 
   function agentLog(payload: { runId: string; hypothesisId: string; location: string; message: string; data?: Record<string, unknown> }) {
     // #region agent log
     fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:payload.location,message:payload.message,data:payload.data ?? {},timestamp:Date.now(),runId:payload.runId,hypothesisId:payload.hypothesisId})}).catch(()=>{});
     // #endregion
+  }
+
+  async function handlePadronAutoFillByDni() {
+    const dni = (form.DNI ?? '').trim()
+    if (dni.length !== 8) return
+    if (padronLastLookupDniRef.current === dni) return
+
+    setDniAutoFillLoading(true)
+    try {
+      const match = await matchPadronByDni(dni)
+      if (!match) {
+        padronLastLookupDniRef.current = dni
+        return
+      }
+
+      setForm((prev) => {
+        const nombreEmpty = (prev.Nombre ?? '').trim().length === 0
+        const apellidoEmpty = (prev.Apellido ?? '').trim().length === 0
+        const escuelaEmpty = (prev.Escuela ?? '').trim().length === 0
+        const mesaEmpty = (prev.Mesa ?? '').trim().length === 0
+
+        agentLog({
+          runId: 'pre-fix',
+          hypothesisId: 'H_PADRON_AUTOFILL',
+          location: 'src/pages/personas/index.tsx:padron-autofill',
+          message: 'Padron match applied to empty fields',
+          data: { dni, nombreEmpty, apellidoEmpty, escuelaEmpty, mesaEmpty },
+        })
+
+        return {
+          ...prev,
+          Nombre: nombreEmpty ? match.Nombre : prev.Nombre,
+          Apellido: apellidoEmpty ? match.Apellido : prev.Apellido,
+          Escuela: escuelaEmpty ? match.EscuelaNombre : prev.Escuela,
+          Mesa: mesaEmpty ? String(match.MesaNro ?? '') : prev.Mesa,
+        }
+      })
+
+      padronLastLookupDniRef.current = dni
+    } catch (e) {
+      // no-op: no queres bloquear la UX si el padrón no responde
+    } finally {
+      setDniAutoFillLoading(false)
+    }
+  }
+
+  async function handleUploadPadronClick() {
+    setPadronUploadError(null)
+    setPadronUploadResult(null)
+    setPadronSyncError(null)
+    setPadronSyncResult(null)
+    if (!padronFile) {
+      setPadronUploadError('Seleccioná un archivo Excel (.xlsx).')
+      return
+    }
+    setPadronUploadLoading(true)
+    try {
+      const res = await uploadPadron(padronFile)
+      setPadronUploadResult(res)
+      setPadronStep(2)
+      agentLog({
+        runId: 'debug',
+        hypothesisId: 'H_SYNC_FLOW_UPLOAD',
+        location: 'src/pages/personas/index.tsx:handleUploadPadronClick',
+        message: 'Upload padrón result received',
+        data: { RowsStored: res.RowsStored, PersonasUpdated: res.PersonasUpdated, DnisNotFoundCount: res.DnisNotFound?.length ?? 0 },
+        timestamp: Date.now(),
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error al cargar el padrón.'
+      setPadronUploadError(msg)
+      agentLog({
+        runId: 'debug',
+        hypothesisId: 'H_SYNC_FLOW_UPLOAD',
+        location: 'src/pages/personas/index.tsx:handleUploadPadronClick',
+        message: 'Upload padrón error',
+        data: { error: msg },
+        timestamp: Date.now(),
+      })
+    } finally {
+      setPadronUploadLoading(false)
+    }
   }
 
   async function fetchReportesData(): Promise<{
@@ -146,10 +404,25 @@ export default function PersonasPage(): React.JSX.Element {
   const leaderSelectRef = React.useRef<HTMLSelectElement>(null)
 
   const fetchList = React.useCallback(() => {
-    if (tab.isReportes) return
+    if (tab.isReportes || tab.id === 'configuracion' || tab.id === 'inicio') return
     setListLoading(true)
     getPersonasByRole(tab.rol)
-      .then(setList)
+      .then((res) => {
+        setList(res)
+        agentLog({
+          runId: 'debug',
+          hypothesisId: 'H_EAGER_LOADING_INCLUDE_EVIDENCE',
+          location: 'src/pages/personas/index.tsx:fetchList',
+          message: 'Loaded personas list for role',
+          data: {
+            rol: tab.rol,
+            count: res.length,
+            withEscuelaNombre: res.filter((p) => (p.EscuelaNombre ?? '').trim().length > 0).length,
+            withMesa: res.filter((p) => p.NroMesa != null).length,
+          },
+          timestamp: Date.now(),
+        })
+      })
       .catch(() => setList([]))
       .finally(() => setListLoading(false))
   }, [tab.rol, tab.isReportes])
@@ -159,7 +432,7 @@ export default function PersonasPage(): React.JSX.Element {
   }, [fetchList])
 
   React.useEffect(() => {
-    if (tab.id === 'reportes') {
+    if (tab.id === 'reportes' || tab.id === 'inicio') {
       setStatsLoading(true)
       Promise.all([
         getPersonasByRole(1),
@@ -216,7 +489,18 @@ export default function PersonasPage(): React.JSX.Element {
   }, [tab.id])
 
   React.useEffect(() => {
-    if (tab.isReportes) return
+    if (tab.id !== 'configuracion') return
+    setPadronStep(1)
+    setPadronUploadError(null)
+    setPadronUploadResult(null)
+    setPadronFile(null)
+    setPadronSyncError(null)
+    setPadronSyncResult(null)
+    setShowPadronModal(false)
+  }, [tab.id])
+
+  React.useEffect(() => {
+    if (tab.isReportes || tab.id === 'configuracion' || tab.id === 'inicio') return
     setForm((prev) => ({ ...prev, Rol: tab.rol, LiderId: null }))
     setShowForm(false)
     setEditingId(null)
@@ -2282,6 +2566,12 @@ export default function PersonasPage(): React.JSX.Element {
   }, [leaders, leaderFilterText, form.LiderId])
 
   const tabIcons: Record<string, React.ReactNode> = {
+    inicio: (
+      <svg className="personasTabIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 10.5L12 3l9 7.5" />
+        <path d="M5 10v10h14V10" />
+      </svg>
+    ),
     admin: (
       <svg className="personasTabIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
@@ -2319,6 +2609,32 @@ export default function PersonasPage(): React.JSX.Element {
         <path d="M18 17V9M13 17V5M8 17v-3" />
       </svg>
     ),
+    configuracion: (
+      <svg
+        className="personasTabIcon"
+        viewBox="-1 -1 26 26"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+        <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.99l.02.02a2.2 2.2 0 0 1-3.11 3.11l-.02-.02a1.8 1.8 0 0 0-1.99-.36 1.8 1.8 0 0 0-1.09 1.65V22a2.2 2.2 0 0 1-4.4 0v-.03a1.8 1.8 0 0 0-1.09-1.65 1.8 1.8 0 0 0-1.99.36l-.02.02A2.2 2.2 0 1 1 2.81 17l.02-.02a1.8 1.8 0 0 0 .36-1.99 1.8 1.8 0 0 0-1.65-1.09H1.5a2.2 2.2 0 0 1 0-4.4h.04a1.8 1.8 0 0 0 1.65-1.09 1.8 1.8 0 0 0-.36-1.99l-.02-.02A2.2 2.2 0 1 1 6.03 2.8l.02.02a1.8 1.8 0 0 0 1.99.36 1.8 1.8 0 0 0 1.09-1.65V1.5a2.2 2.2 0 0 1 4.4 0v.03a1.8 1.8 0 0 0 1.09 1.65 1.8 1.8 0 0 0 1.99-.36l.02-.02A2.2 2.2 0 1 1 21.2 6.03l-.02.02a1.8 1.8 0 0 0-.36 1.99 1.8 1.8 0 0 0 1.65 1.09h.03a2.2 2.2 0 0 1 0 4.4h-.03a1.8 1.8 0 0 0-1.65 1.09Z" />
+      </svg>
+    ),
+  }
+
+  function renderHeaderIcon(): React.ReactNode {
+    const icon = tabIcons[tab.id]
+    if (icon) return icon
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 20v-2a4 4 0 014-4h8a4 4 0 014 4v2" />
+      </svg>
+    )
   }
 
   return (
@@ -2360,26 +2676,41 @@ export default function PersonasPage(): React.JSX.Element {
         <header key="panelHeader" className="personasPanelHeader">
           <div className="personasPanelTitleBlock">
             <h2>
-              {tab.id === 'reportes' ? (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 3v18h18" />
-                  <path d="M18 17V9M13 17V5M8 17v-3" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="8" r="4" />
-                  <path d="M4 20v-2a4 4 0 014-4h8a4 4 0 014 4v2" />
-                </svg>
-              )}
+              {renderHeaderIcon()}
               {tab.label}
+              {tab.id === 'inicio' && (
+                <button
+                  type="button"
+                  className="personasInicioHelpBtnInTitle"
+                  onClick={openAppHelpModal}
+                  title="Ayuda para configuración inicial de la aplicación"
+                  aria-label="Ayuda para configuración inicial de la aplicación"
+                  onMouseEnter={(e) => {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:help-btn-hover',message:'help button hover',data:{tabId:tab.id},timestamp:Date.now(),hypothesisId:'H6_help_btn_hover_tooltip'},)}).catch(()=>{});
+                    const target = e.currentTarget as HTMLElement
+                    const cs = window.getComputedStyle(target)
+                    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:help-btn-hover:computedStyle',message:'computed styles for help button',data:{borderWidth:cs.borderWidth,borderStyle:cs.borderStyle,backgroundColor:cs.backgroundColor,padding:cs.padding,display:cs.display,height:cs.height,width:cs.width},timestamp:Date.now(),hypothesisId:'H7_help_btn_contour_style'},)}).catch(()=>{});
+                    // #endregion
+                  }}
+                >
+                  <span className="personasHelpInfoIBadge" aria-hidden="true">
+                    i
+                  </span>
+                </button>
+              )}
             </h2>
             <p className="personasPanelDescription">
               {tab.isReportes
                 ? 'Estadísticas por rol: referentes, punteros, votantes y total de votos.'
+                : tab.id === 'inicio'
+                ? 'Panel principal con estadísticas generales.'
+                : tab.id === 'configuracion'
+                ? ''
                 : `Administrá los ${tab.label.toLowerCase()} del sistema. Creá, editá o eliminá registros desde la tabla.`}
             </p>
           </div>
-          {!tab.isReportes && (
+          {!tab.isReportes && tab.id !== 'configuracion' && tab.id !== 'inicio' && (
             <div className="personasHeaderActions">
               <button type="button" className="personasButton personasButtonPrimary" onClick={openCreate}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2419,8 +2750,8 @@ export default function PersonasPage(): React.JSX.Element {
           )}
         </header>
 
-        {tab.isReportes ? (
-          <div key="reportesPanel" className="reportesPanel">
+        {tab.id === 'inicio' ? (
+          <div key="inicioPanel" className="reportesPanel">
             {statsLoading ? (
               <p className="personasLoading">Cargando estadísticas...</p>
             ) : (
@@ -2448,6 +2779,573 @@ export default function PersonasPage(): React.JSX.Element {
               </div>
             )}
 
+            {showAppHelpModal && (
+              <div
+                className="personasHelpAppOverlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="appHelpTitle"
+                onMouseDown={(e) => {
+                  if (e.target === e.currentTarget) closeAppHelpModal()
+                }}
+              >
+                <div className="personasHelpAppModal">
+                  <div className="personasHelpAppHeader">
+                    <h3 id="appHelpTitle" className="personasHelpAppTitle">
+                      Ayuda para usar la aplicación
+                    </h3>
+                    <button
+                      type="button"
+                      className="personasHelpDrawerClose"
+                      onClick={closeAppHelpModal}
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="personasHelpAppBody">
+                    <ol className="personasHelpAppList">
+                      <li>
+                        Carga la <strong>información de tu grupo</strong> en la pestaña <strong>Grupos</strong>.
+                      </li>
+                      <li>
+                        Carga la <strong>información de los Referentes</strong> en la pestaña <strong>Referentes</strong>.
+                        <br />
+                        <span>Recordá que un referente tiene que pertenecer a un grupo.</span>
+                      </li>
+                      <li>
+                        Carga la <strong>información de los Punteros</strong> en la pestaña <strong>Punteros</strong>.
+                        <br />
+                        <span>Recordá que un puntero tiene que pertenecer a un Referente.</span>
+                      </li>
+                      <li>
+                        Carga la <strong>información de los Votantes</strong> en la pestaña <strong>Votantes</strong>.
+                        <br />
+                        <span>Recordá que un votante tiene que pertenecer a un Puntero.</span>
+                      </li>
+                    </ol>
+
+                    <div className="personasHelpAppSection">
+                      <strong>¿Qué hace la pestaña Reportes?</strong>
+                      <div className="personasHelpAppText">
+                        Te permite <strong>ver</strong> e <strong>imprimir</strong> listados armados con los filtros (Grupo, Referente y/o Puntero) para generar reportes de la jerarquía.
+                      </div>
+                    </div>
+
+                    <div className="personasHelpAppSection">
+                      <strong>¿Cómo se usa el Padrón?</strong>
+                      <div className="personasHelpAppText">
+                        El padrón es un Excel que se usa para <strong>completar y sincronizar datos por DNI</strong> (por ejemplo, Escuela/Mesa). Primero lo <strong>importás</strong> en Configuración y luego usás la opción de <strong>sincronizar</strong> para actualizar los registros existentes.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : tab.id === 'configuracion' ? (
+          <div key="configPanel" className="reportesPanel">
+            <div className="personasCard" style={{ marginTop: 12 }}>
+              <div className="personasFormHeader">
+                <h3 className="personasFormTitle">Administrador</h3>
+              </div>
+              <p style={{ margin: '0 0 12px', color: '#555', fontSize: 13 }}>
+                Gestión de Administradores. Creá, editá o eliminá registros desde la tabla.
+              </p>
+              <button type="button" className="personasButton personasButtonPrimary" onClick={openAdminModal}>
+                Gestionar administradores
+              </button>
+            </div>
+
+            <div className="personasCard" style={{ marginTop: 12 }}>
+              <div className="personasFormHeader">
+                <h3 className="personasFormTitle">Padrón</h3>
+              </div>
+
+              <p style={{ margin: '0 0 12px', color: '#555', fontSize: 13 }}>
+                Cargá el padrón en formato Excel para completar Escuela/Mesa (y sincronizar datos por DNI).
+              </p>
+
+              <button
+                type="button"
+                className="personasButton personasButtonPrimary"
+                onClick={openPadronImportModal}
+              >
+                Importar padrón
+              </button>
+              <span className="personasHelpWrap" aria-label="Ayuda para el formato del Excel">
+                <span className="personasHelpIcon" aria-hidden="true">i</span>
+                <span className="personasHelpTooltip">
+                  El Excel debe tener las columnas en este orden: DNI, Nombre, Apellido, Escuela, Mesa, Orden. La extension del archivo tiene que ser (.xlsx).
+                </span>
+              </span>
+            </div>
+
+            {showPadronModal && (
+              <div
+                className="personasPadronOverlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="padronImportTitle"
+                onMouseDown={(e) => {
+                  if (e.target === e.currentTarget) closePadronImportModal()
+                }}
+              >
+                <div className="personasPadronModal">
+                  <div className="personasPadronModalHeader">
+                    <div>
+                      <h3 id="padronImportTitle" className="personasPadronModalTitle">Importar Padrón</h3>
+                      <p className="personasPadronModalSubtitle">
+                        Cargá el padrón en Excel y sincronizá por DNI.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="personasPadronClose"
+                      onClick={closePadronImportModal}
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="personasPadronBody">
+                    {padronStep === 1 ? (
+                      <>
+                        <label className="personasField">
+                          <input
+                            type="file"
+                            accept=".xlsx"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0] ?? null
+                              setPadronFile(f)
+                              setPadronUploadError(null)
+                              setPadronUploadResult(null)
+                              setPadronSyncError(null)
+                              setPadronSyncResult(null)
+                            }}
+                          />
+                        </label>
+
+                        <div style={{ marginTop: 14, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="personasButton personasButtonPrimary"
+                            disabled={padronUploadLoading || !padronFile}
+                            onClick={() => { void handleUploadPadronClick() }}
+                          >
+                            {padronUploadLoading ? 'Cargando...' : 'Cargar Padrón'}
+                          </button>
+                          <button
+                            type="button"
+                            className="personasButton personasButtonSecondary"
+                            disabled={padronUploadLoading}
+                            onClick={closePadronImportModal}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+
+                        {padronUploadError && (
+                          <p className="personasError" style={{ color: 'crimson', marginTop: 12 }}>
+                            {padronUploadError}
+                          </p>
+                        )}
+
+                        {padronUploadResult && (
+                          <p style={{ margin: '12px 0 0', color: '#555', fontSize: 13 }}>
+                            Archivo cargado. Filas: {padronUploadResult.RowsStored}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="personasButton personasButtonPrimary"
+                            disabled={padronSyncLoading || padronUploadResult == null}
+                            onClick={async () => {
+                              if (padronUploadResult == null) return
+                              setPadronSyncError(null)
+                              setPadronSyncLoading(true)
+                              setPadronSyncResult(null)
+                              try {
+                                const res = await syncPadronActive()
+                                setPadronSyncResult(res)
+                                agentLog({
+                                  runId: 'debug',
+                                  hypothesisId: 'H_SYNC_FLOW_SYNC_ENDPOINT',
+                                  location: 'src/pages/personas/index.tsx:padron-modal-sync-onclick',
+                                  message: 'Sync padrón result received',
+                                  data: {
+                                    PersonasUpdated: res.PersonasUpdated,
+                                    DnisNotFoundCount: res.DnisNotFound?.length ?? 0,
+                                  },
+                                  timestamp: Date.now(),
+                                })
+                              } catch (e) {
+                                const msg = e instanceof Error ? e.message : 'Error al sincronizar.'
+                                setPadronSyncError(msg)
+                                agentLog({
+                                  runId: 'debug',
+                                  hypothesisId: 'H_SYNC_FLOW_SYNC_ENDPOINT',
+                                  location: 'src/pages/personas/index.tsx:padron-modal-sync-onclick',
+                                  message: 'Sync padrón error',
+                                  data: { error: msg },
+                                  timestamp: Date.now(),
+                                })
+                              } finally {
+                                setPadronSyncLoading(false)
+                              }
+                            }}
+                          >
+                            {padronSyncLoading ? 'Sincronizando...' : 'Sincronizar datos'}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="personasButton personasButtonSecondary"
+                            disabled={padronSyncLoading}
+                            onClick={() => setPadronStep(1)}
+                          >
+                            Volver a cargar
+                          </button>
+                        </div>
+
+                        {padronSyncError && (
+                          <p className="personasError" style={{ color: 'crimson', marginTop: 12 }}>
+                            {padronSyncError}
+                          </p>
+                        )}
+
+                        {padronUploadResult && (
+                          <p style={{ margin: '12px 0 0', color: '#111', fontWeight: 600 }}>
+                            Cargado: {padronUploadResult.RowsStored} filas
+                          </p>
+                        )}
+
+                        {padronSyncResult && (
+                          <div style={{ marginTop: 12 }}>
+                            <p style={{ margin: 0, color: '#111', fontWeight: 600 }}>
+                              Personas actualizadas: {padronSyncResult.PersonasUpdated}
+                            </p>
+                            <p style={{ margin: '6px 0 0', color: '#555', fontSize: 13 }}>
+                              DNIs no encontrados en Personas: {padronSyncResult.DnisNotFound.length}
+                            </p>
+
+                            {padronSyncResult.DnisNotFound.length > 0 && (
+                              <div style={{ marginTop: 10 }}>
+                                <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600 }}>
+                                  En rojo (no existían en personas):
+                                </p>
+                                <div style={{ color: 'crimson', fontSize: 13, lineHeight: 1.5, maxHeight: 180, overflow: 'auto' }}>
+                                  {padronSyncResult.DnisNotFound.slice(0, 200).map((d) => (
+                                    <div key={`dni-missing-${d}`}>{d}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+                          <button type="button" className="personasButton personasButtonSecondary" onClick={closePadronImportModal}>
+                            Cerrar
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showAdminModal && (
+              <div
+                className="personasAdminOverlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="adminModalTitle"
+                onMouseDown={(e) => {
+                  if (e.target === e.currentTarget) closeAdminModal()
+                }}
+              >
+                <div className="personasAdminModal">
+                  <div className="personasAdminModalHeader">
+                    <div>
+                      <h3 id="adminModalTitle" className="personasAdminModalTitle">Gestión de Administradores</h3>
+                      <p className="personasAdminModalSubtitle">Creá, editá o eliminá registros desde la tabla.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="personasPadronClose"
+                      onClick={closeAdminModal}
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="personasAdminModalBody">
+                    <div className="personasAdminTopBar">
+                      <div className="personasSearchWrap personasAdminSearchWrap">
+                        <svg className="personasSearchIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="11" cy="11" r="7" />
+                          <path d="M21 21l-4.3-4.3" />
+                        </svg>
+                        <input
+                          value={adminSearch}
+                          onChange={(e) => { setAdminSearch(e.target.value); setAdminPage(1) }}
+                          placeholder="Buscar por nombre, apellido o DNI"
+                          disabled={adminShowForm || adminSubmitting}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="personasButton personasButtonPrimary personasAdminNewBtn"
+                        onClick={openAdminCreate}
+                        disabled={adminShowForm || adminSubmitting}
+                      >
+                        + Nuevo administrador
+                      </button>
+                    </div>
+
+                    {adminShowForm && (
+                      <div className="personasCard" style={{ marginTop: 12 }}>
+                        <div className="personasFormHeader">
+                          <h3 className="personasFormTitle">
+                            {adminEditingId != null ? 'Editar administrador' : 'Crear administrador'}
+                          </h3>
+                          <button
+                            type="button"
+                            className="personasFormClose"
+                            onClick={() => { setAdminShowForm(false); setAdminEditingId(null) }}
+                            title="Cerrar"
+                            aria-label="Cerrar"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <form className="personasForm" onSubmit={handleAdminSubmit}>
+                          <label className="personasField">
+                            <span className="personasFieldLabel">Nombre *</span>
+                            <input
+                              className="personasInput"
+                              value={adminForm.Nombre}
+                              onChange={(e) => setAdminForm((s) => ({ ...s, Nombre: sanitizeNombreApellido(e.target.value) }))}
+                              maxLength={50}
+                              autoComplete="given-name"
+                            />
+                          </label>
+                          <label className="personasField">
+                            <span className="personasFieldLabel">Apellido *</span>
+                            <input
+                              className="personasInput"
+                              value={adminForm.Apellido}
+                              onChange={(e) => setAdminForm((s) => ({ ...s, Apellido: sanitizeNombreApellido(e.target.value) }))}
+                              maxLength={50}
+                              autoComplete="family-name"
+                            />
+                          </label>
+                          <label className="personasField">
+                            <span className="personasFieldLabel">DNI *</span>
+                            <input
+                              className="personasInput"
+                              value={adminForm.DNI}
+                              onChange={(e) => setAdminForm((s) => ({ ...s, DNI: sanitizeDNI(e.target.value) }))}
+                              inputMode="numeric"
+                              maxLength={8}
+                              autoComplete="off"
+                            />
+                          </label>
+                          <label className="personasField">
+                            <span className="personasFieldLabel">Teléfono</span>
+                            <input
+                              className="personasInput"
+                              value={adminForm.Telefono ?? ''}
+                              onChange={(e) => setAdminForm((s) => ({ ...s, Telefono: sanitizeTelefono(e.target.value) }))}
+                              inputMode="tel"
+                              maxLength={13}
+                              autoComplete="tel"
+                            />
+                          </label>
+                          <label className="personasField">
+                            <span className="personasFieldLabel">Escuela</span>
+                            <input
+                              className="personasInput"
+                              value={adminForm.Escuela ?? ''}
+                              onChange={(e) => setAdminForm((s) => ({ ...s, Escuela: sanitizeEscuela(e.target.value) }))}
+                              maxLength={75}
+                              autoComplete="organization"
+                            />
+                          </label>
+                          <label className="personasField">
+                            <span className="personasFieldLabel">Mesa</span>
+                            <input
+                              className="personasInput"
+                              value={adminForm.Mesa ?? ''}
+                              onChange={(e) => setAdminForm((s) => ({ ...s, Mesa: sanitizeMesa(e.target.value) }))}
+                              inputMode="numeric"
+                              maxLength={4}
+                              autoComplete="off"
+                            />
+                          </label>
+                          <div className="personasActions personasFieldFull">
+                            <button className="personasButton" disabled={adminSubmitting} type="submit">
+                              {adminSubmitting ? 'Guardando...' : adminEditingId != null ? 'Guardar cambios' : 'Crear administrador'}
+                            </button>
+                            <button
+                              type="button"
+                              className="personasButton personasButtonSecondary"
+                              onClick={() => { setAdminShowForm(false); setAdminEditingId(null) }}
+                            >
+                              Cancelar
+                            </button>
+                            <div className="personasStatus" role="status" aria-live="polite">
+                              {adminError ? <span key="error" className="personasError">{adminError}</span> : null}
+                              {adminSuccess ? <span key="success" className="personasSuccess">{adminSuccess}</span> : null}
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+
+                    <div className="personasTableCard" style={{ marginTop: 12 }}>
+                      <div className="personasTableWrap">
+                        {adminListLoading ? (
+                          <p className="personasLoading">Cargando lista...</p>
+                        ) : (() => {
+                          const q = adminSearch.trim().toLowerCase()
+                          const filtered = q
+                            ? adminList.filter(
+                                (p) =>
+                                  (p.Nombre ?? '').toLowerCase().includes(q) ||
+                                  (p.Apellido ?? '').toLowerCase().includes(q) ||
+                                  (p.DNI ?? '').toLowerCase().includes(q)
+                              )
+                            : adminList
+                          const sorted = [...filtered].sort((a, b) => {
+                            const ap = (a.Apellido || '').toLowerCase()
+                            const bp = (b.Apellido || '').toLowerCase()
+                            if (ap < bp) return -1
+                            if (ap > bp) return 1
+                            const an = (a.Nombre || '').toLowerCase()
+                            const bn = (b.Nombre || '').toLowerCase()
+                            if (an < bn) return -1
+                            if (an > bn) return 1
+                            return 0
+                          })
+                          const totalPages = Math.max(1, Math.ceil(sorted.length / adminPerPage))
+                          const start = (adminPage - 1) * adminPerPage
+                          const pageRows = sorted.slice(start, start + adminPerPage)
+
+                          if (sorted.length === 0) {
+                            return <p className="personasEmpty">No hay administradores.</p>
+                          }
+
+                          return (
+                            <>
+                              <table className="personasTable">
+                                <thead>
+                                  <tr>
+                                    <th>Apellido y Nombre</th>
+                                    <th>DNI</th>
+                                    <th>Teléfono</th>
+                                    <th>Escuela</th>
+                                    <th>Mesa</th>
+                                    <th className="personasTableActions">Acciones</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {pageRows.map((row) => (
+                                    <tr key={`admin-${row.Id}`}>
+                                      <td>{`${row.Apellido}, ${row.Nombre}`}</td>
+                                      <td>{row.DNI}</td>
+                                      <td>{row.Telefono ?? '—'}</td>
+                                      <td>{row.EscuelaNombre ?? '—'}</td>
+                                      <td>{row.NroMesa ?? '—'}</td>
+                                      <td className="personasTableActions">
+                                        <button
+                                          type="button"
+                                          className="personasTableLink"
+                                          onClick={() => openAdminEdit(row)}
+                                          title="Editar"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                          </svg>
+                                          Editar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="personasTableLink personasTableLinkDelete"
+                                          onClick={() => { void handleAdminDelete(row) }}
+                                          title="Eliminar"
+                                        >
+                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                            <line x1="10" y1="11" x2="10" y2="17" />
+                                            <line x1="14" y1="11" x2="14" y2="17" />
+                                          </svg>
+                                          Eliminar
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <div className="personasPagination">
+                                <span>Total: {sorted.length} administradores</span>
+                                <div className="personasPaginationNav">
+                                  <button
+                                    type="button"
+                                    className="personasPaginationBtn"
+                                    disabled={adminPage <= 1}
+                                    onClick={() => setAdminPage((p) => Math.max(1, p - 1))}
+                                    aria-label="Página anterior"
+                                  >
+                                    ←
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="personasPaginationBtn"
+                                    disabled={adminPage >= totalPages}
+                                    onClick={() => setAdminPage((p) => Math.min(totalPages, p + 1))}
+                                    aria-label="Página siguiente"
+                                  >
+                                    →
+                                  </button>
+                                  <div className="personasPaginationPerPage">
+                                    <select
+                                      value={adminPerPage}
+                                      onChange={(e) => { setAdminPerPage(Number(e.target.value)); setAdminPage(1) }}
+                                      aria-label="Elementos por página"
+                                    >
+                                      {[7, 10, 15, 25].map((n) => (
+                                        <option key={`admin-perpage-${n}`} value={n}>{n} / página</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : tab.isReportes ? (
+          <div key="reportesPanel" className="reportesPanel">
             <h3 className="reportesListadosTitle">Listados para ver o imprimir</h3>
             {reportesListsLoading ? (
               <p className="personasLoading">Cargando listados...</p>
@@ -2804,14 +3702,31 @@ export default function PersonasPage(): React.JSX.Element {
               </label>
               <label className="personasField">
                 <span className="personasFieldLabel">DNI *</span>
-                <input
-                  className="personasInput"
-                  value={form.DNI}
-                  onChange={(e) => setForm((s) => ({ ...s, DNI: sanitizeDNI(e.target.value) }))}
-                  inputMode="numeric"
-                  maxLength={8}
-                  autoComplete="off"
-                />
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    className="personasInput"
+                    style={{ flex: 1 }}
+                    value={form.DNI}
+                    onChange={(e) => setForm((s) => ({ ...s, DNI: sanitizeDNI(e.target.value) }))}
+                    onBlur={() => { void handlePadronAutoFillByDni() }}
+                    inputMode="numeric"
+                    maxLength={8}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="personasButton personasButtonSecondary personasIconButton"
+                    onClick={() => { void handlePadronAutoFillByDni() }}
+                    disabled={dniAutoFillLoading || (form.DNI ?? '').trim().length !== 8}
+                    title="Buscar en padrón por DNI"
+                    aria-label="Buscar en padrón por DNI"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="M21 21l-4.3-4.3" />
+                    </svg>
+                  </button>
+                </div>
               </label>
               <label className="personasField">
                 <span className="personasFieldLabel">Teléfono</span>
@@ -3090,10 +4005,11 @@ export default function PersonasPage(): React.JSX.Element {
             <table className="personasTable">
               <thead>
                 <tr>
-                  <th>Apellido</th>
-                  <th>Nombre</th>
+                  <th>Apellido y Nombre</th>
                   <th>DNI</th>
                   <th>Teléfono</th>
+                  <th>Escuela</th>
+                  <th>Mesa</th>
                   {tab.leaderRole != null && (
                     <th>
                       {tab.rol === 2
@@ -3111,10 +4027,11 @@ export default function PersonasPage(): React.JSX.Element {
               <tbody>
                 {paginatedList.map((row) => (
                   <tr key={`persona-${row.Id}`}>
-                    <td>{row.Apellido}</td>
-                    <td>{row.Nombre}</td>
+                    <td>{`${row.Apellido}, ${row.Nombre}`}</td>
                     <td>{row.DNI}</td>
                     <td>{row.Telefono ?? '—'}</td>
+                    <td>{row.EscuelaNombre ?? '—'}</td>
+                    <td>{row.NroMesa ?? '—'}</td>
                     {tab.leaderRole != null && <td>{row.LiderNombre ?? '—'}</td>}
                     <td className="personasTableActions">
                       <button
