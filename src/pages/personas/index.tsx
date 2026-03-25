@@ -862,6 +862,29 @@ export default function PersonasPage(): React.JSX.Element {
     setError(null)
     setSuccessMessage(null)
     setLeaderSelectVisible(false)
+    requestAnimationFrame(() => {
+      // #region agent log
+      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
+        body: JSON.stringify({
+          sessionId: 'b35ed6',
+          location: 'PersonasPage:index.tsx:openCreate:measureSaveIcon',
+          message: 'Measure submit save icon',
+          data: {
+            submitBtnSvgRect: (() => {
+              const el = document.querySelector<SVGElement>('button[type="submit"] svg')
+              const r = el?.getBoundingClientRect()
+              return r ? { width: r.width, height: r.height } : null
+            })(),
+          },
+          timestamp: Date.now(),
+          runId: 'post-fix',
+          hypothesisId: 'H_SAVE_ICON_MEASURE',
+        }),
+      }).catch(() => {})
+      // #endregion
+    })
   }
 
   /** Genera el HTML del reporte jerárquico (referentes / punteros / votantes) */
@@ -885,6 +908,8 @@ export default function PersonasPage(): React.JSX.Element {
     const headerPathLine = (options?.headerPathLine ?? '').trim()
     const leaderRolLabel = rol === 2 ? 'Grupo' : rol === 3 ? 'Referente' : 'Puntero'
     const subRolLabel = rol === 2 ? 'Referente' : rol === 3 ? 'Puntero' : 'Votante'
+    const leaderRoleKey = rol === 2 ? 'grupo' : rol === 3 ? 'referente' : 'puntero'
+    const subRoleKey = rol === 2 ? 'referente' : rol === 3 ? 'puntero' : 'votante'
 
     const groups = new Map<number, { leaderName: string; persons: PersonaResponseDTO[] }>()
     list.forEach((p) => {
@@ -943,8 +968,8 @@ export default function PersonasPage(): React.JSX.Element {
         const leaderRow = `
             <tr class="reportLeaderRow">
               <td>${groupIndex + 1}</td>
-              ${includeRolColumn ? `<td>${leaderRolLabel}</td>` : ''}
-              <td><strong>${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</strong></td>
+              ${includeRolColumn ? `<td><span class="roleBadge roleBadge--${leaderRoleKey}">${leaderRolLabel}</span></td>` : ''}
+              <td><span class="roleName--${leaderRoleKey}">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span></td>
               <td>${leaderDni}</td>
               <td>—</td>
               <td>—</td>
@@ -956,8 +981,8 @@ export default function PersonasPage(): React.JSX.Element {
             (p, idx) => `
                 <tr class="reportSubRow">
                   <td>${groupIndex + 1}.${idx + 1}</td>
-                  ${includeRolColumn ? `<td class="reportRolCell">${subRolLabel}</td>` : ''}
-                  <td class="reportSubApellido">${p.Apellido}, ${p.Nombre}</td>
+                  ${includeRolColumn ? `<td class="reportRolCell"><span class="roleBadge roleBadge--${subRoleKey}">${subRolLabel}</span></td>` : ''}
+                  <td class="reportSubApellido roleName--${subRoleKey}">${p.Apellido}, ${p.Nombre}</td>
                   <td>${p.DNI}</td>
                   <td>${p.Telefono ?? '—'}</td>
                   <td>${p.EscuelaNombre ?? '—'}</td>
@@ -1028,6 +1053,27 @@ export default function PersonasPage(): React.JSX.Element {
             tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
             tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
             tr.reportGroupSpacer td { height: 10px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+            /* Role badges (consistent with UI) */
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 10px;
+              border-radius: 999px;
+              font-size: 11px;
+              font-weight: 800;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--grupo { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+            .roleBadge--referente { background: #dcfce7; color: #15803d; border-color: #bbf7d0; font-weight: 750; }
+            .roleBadge--puntero { background: #fef3c7; color: #b45309; border-color: #fde68a; font-weight: 700; }
+            .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
+            .roleName--grupo { font-weight: 850; }
+            .roleName--referente { font-weight: 750; }
+            .roleName--puntero { font-weight: 650; }
+            .roleName--votante { font-weight: 550; }
           </style>
         </head>
         <body>
@@ -1116,7 +1162,7 @@ export default function PersonasPage(): React.JSX.Element {
       rows.push(`
         <tr class="reportRowGroup">
           <td class="reportNumGroup">${numG}</td>
-          <td>Grupo</td>
+          <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
           <td><strong>${g.Apellido}, ${g.Nombre}</strong></td>
           <td>${g.DNI}</td>
           <td>${g.Telefono ?? '—'}</td>
@@ -1132,7 +1178,7 @@ export default function PersonasPage(): React.JSX.Element {
         rows.push(`
           <tr class="reportRowEmpty">
             <td class="reportNumEmpty">${numG}.—</td>
-            <td>Referente</td>
+            <td><span class="roleBadge roleBadge--referente">Referente</span></td>
             <td class="reportIndent1"><em>Sin referentes</em></td>
             <td>—</td><td>—</td><td>—</td><td>—</td>
           </tr>`)
@@ -1142,7 +1188,7 @@ export default function PersonasPage(): React.JSX.Element {
           rows.push(`
             <tr class="reportRowRef">
               <td class="reportNumRef">${numRef}</td>
-              <td>Referente</td>
+              <td><span class="roleBadge roleBadge--referente">Referente</span></td>
               <td class="reportIndent1"><strong>${ref.Apellido}, ${ref.Nombre}</strong></td>
               <td>${ref.DNI}</td>
               <td>${ref.Telefono ?? '—'}</td>
@@ -1156,7 +1202,7 @@ export default function PersonasPage(): React.JSX.Element {
             rows.push(`
               <tr class="reportRowEmpty">
                 <td class="reportNumEmpty">${numRef}.—</td>
-                <td>Puntero</td>
+                <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
                 <td class="reportIndent2"><em>Sin punteros</em></td>
                 <td>—</td><td>—</td><td>—</td><td>—</td>
               </tr>`)
@@ -1166,7 +1212,7 @@ export default function PersonasPage(): React.JSX.Element {
               rows.push(`
                 <tr class="reportRowPun">
                   <td class="reportNumPun">${numPun}</td>
-                  <td>Puntero</td>
+                  <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
                   <td class="reportIndent2">${pun.Apellido}, ${pun.Nombre}</td>
                   <td>${pun.DNI}</td>
                   <td>${pun.Telefono ?? '—'}</td>
@@ -1180,7 +1226,7 @@ export default function PersonasPage(): React.JSX.Element {
                 rows.push(`
                   <tr class="reportRowEmpty">
                     <td class="reportNumEmpty">${numPun}.—</td>
-                    <td>Votante</td>
+                    <td><span class="roleBadge roleBadge--votante">Votante</span></td>
                     <td class="reportIndent3"><em>Sin votantes</em></td>
                     <td>—</td><td>—</td><td>—</td><td>—</td>
                   </tr>`)
@@ -1190,7 +1236,7 @@ export default function PersonasPage(): React.JSX.Element {
                   rows.push(`
                     <tr class="reportRowVot">
                       <td class="reportNumVot">${numVot}</td>
-                      <td class="reportRolVot">Votante</td>
+                      <td class="reportRolVot"><span class="roleBadge roleBadge--votante">Votante</span></td>
                       <td class="reportIndent3">${vot.Apellido}, ${vot.Nombre}</td>
                       <td>${vot.DNI}</td>
                       <td>${vot.Telefono ?? '—'}</td>
@@ -1256,6 +1302,27 @@ export default function PersonasPage(): React.JSX.Element {
             td.reportIndent1 { padding-left: 18px; }
             td.reportIndent2 { padding-left: 36px; }
             td.reportIndent3 { padding-left: 52px; }
+            /* Role badges (consistent with UI) */
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 10px;
+              border-radius: 999px;
+              font-size: 11px;
+              font-weight: 800;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--grupo { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+            .roleBadge--referente { background: #dcfce7; color: #15803d; border-color: #bbf7d0; font-weight: 750; }
+            .roleBadge--puntero { background: #fef3c7; color: #b45309; border-color: #fde68a; font-weight: 700; }
+            .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
+            .roleName--grupo { font-weight: 850; }
+            .roleName--referente { font-weight: 750; }
+            .roleName--puntero { font-weight: 650; }
+            .roleName--votante { font-weight: 550; }
             tr.reportJerarquiaSpacer td { height: 14px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
           </style>
         </head>
@@ -1433,7 +1500,7 @@ export default function PersonasPage(): React.JSX.Element {
       rows.push(`
         <tr class="reportGroupTopRow">
           <td class="reportNumGroup">${gi + 1}</td>
-          <td>Grupo</td>
+          <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
           <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
           <td>${g.DNI}</td>
           <td>—</td>
@@ -1448,7 +1515,7 @@ export default function PersonasPage(): React.JSX.Element {
         rows.push(`
           <tr class="reportEmptyRow">
             <td></td>
-            <td>Referente</td>
+            <td><span class="roleBadge roleBadge--referente">Referente</span></td>
             <td class="reportIndent1"><em>Sin referentes</em></td>
             <td>—</td><td>—</td><td>—</td><td>—</td>
           </tr>`)
@@ -1459,7 +1526,7 @@ export default function PersonasPage(): React.JSX.Element {
           rows.push(`
             <tr class="reportLeaderRow">
               <td class="reportNumRef">${gi + 1}.${ri + 1}</td>
-              <td>Referente</td>
+              <td><span class="roleBadge roleBadge--referente">Referente</span></td>
               <td class="reportIndent1"><strong>${ref.Apellido.toUpperCase()}${ref.Nombre ? `, ${ref.Nombre}` : ''}</strong></td>
               <td>${ref.DNI}</td>
               <td>${ref.Telefono ?? '—'}</td>
@@ -1471,7 +1538,7 @@ export default function PersonasPage(): React.JSX.Element {
             rows.push(`
               <tr class="reportEmptyRow">
                 <td></td>
-                <td>Puntero</td>
+                <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
                 <td class="reportIndent2"><em>Sin punteros</em></td>
                 <td>—</td><td>—</td><td>—</td><td>—</td>
               </tr>`)
@@ -1480,7 +1547,7 @@ export default function PersonasPage(): React.JSX.Element {
               rows.push(`
                 <tr class="reportSubRow">
                   <td class="reportNumPun">${gi + 1}.${ri + 1}.${pi + 1}</td>
-                  <td class="reportRolPuntero">Puntero</td>
+                  <td class="reportRolPuntero"><span class="roleBadge roleBadge--puntero">Puntero</span></td>
                   <td class="reportIndent2">${p.Apellido}, ${p.Nombre}</td>
                   <td>${p.DNI}</td>
                   <td>${p.Telefono ?? '—'}</td>
@@ -1545,6 +1612,23 @@ export default function PersonasPage(): React.JSX.Element {
             td.reportNumRef { padding-left: 18px; }
             td.reportNumPun { padding-left: 36px; }
             tr.reportGroupSpacer td { height: 12px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+            /* Role badges (consistent with UI) */
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 10px;
+              border-radius: 999px;
+              font-size: 11px;
+              font-weight: 800;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--grupo { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+            .roleBadge--referente { background: #dcfce7; color: #15803d; border-color: #bbf7d0; font-weight: 750; }
+            .roleBadge--puntero { background: #fef3c7; color: #b45309; border-color: #fde68a; font-weight: 700; }
+            .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
           </style>
         </head>
         <body>
@@ -2768,7 +2852,14 @@ export default function PersonasPage(): React.JSX.Element {
           </div>
           {!tab.isReportes && tab.id !== 'configuracion' && tab.id !== 'inicio' && (
             <div className="personasHeaderActions">
-              <button type="button" className="personasButton personasButtonPrimary" onClick={openCreate}>
+              <button
+                type="button"
+                className="personasButton personasButtonPrimary"
+                onClick={openCreate}
+                disabled={showForm || isSubmitting}
+                title={showForm ? 'Guardá o cancelá para crear/editar nuevamente' : `Crear nuevo ${tab.singular}`}
+                aria-label={showForm ? 'Nuevo deshabilitado' : `Nuevo ${tab.singular}`}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M12 5v14M5 12h14" />
                 </svg>
@@ -2780,6 +2871,7 @@ export default function PersonasPage(): React.JSX.Element {
                     type="button"
                     className="personasButton personasButtonSecondary"
                     onClick={handleViewReport}
+                    disabled={showForm || isSubmitting}
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
@@ -2791,6 +2883,7 @@ export default function PersonasPage(): React.JSX.Element {
                     type="button"
                     className="personasButton personasButtonSecondary"
                     onClick={handlePrintReport}
+                    disabled={showForm || isSubmitting}
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M6 9V3h12v6" />
@@ -2813,23 +2906,38 @@ export default function PersonasPage(): React.JSX.Element {
             ) : (
               <div className="reportesGrid">
                 <div className="reportesCard">
-                  <span className="reportesCardLabel">Grupos</span>
+                  <div className="reportesCardLabelRow">
+                    <span className="reportesCardIconWrap">{tabIcons.grupos}</span>
+                    <span className="reportesCardLabel">Grupos</span>
+                  </div>
                   <span className="reportesCardValue">{stats.grupos}</span>
                 </div>
                 <div className="reportesCard">
-                  <span className="reportesCardLabel">Referentes</span>
+                  <div className="reportesCardLabelRow">
+                    <span className="reportesCardIconWrap">{tabIcons.referentes}</span>
+                    <span className="reportesCardLabel">Referentes</span>
+                  </div>
                   <span className="reportesCardValue">{stats.referentes}</span>
                 </div>
                 <div className="reportesCard">
-                  <span className="reportesCardLabel">Punteros</span>
+                  <div className="reportesCardLabelRow">
+                    <span className="reportesCardIconWrap">{tabIcons.punteros}</span>
+                    <span className="reportesCardLabel">Punteros</span>
+                  </div>
                   <span className="reportesCardValue">{stats.punteros}</span>
                 </div>
                 <div className="reportesCard">
-                  <span className="reportesCardLabel">Votantes</span>
+                  <div className="reportesCardLabelRow">
+                    <span className="reportesCardIconWrap">{tabIcons.votantes}</span>
+                    <span className="reportesCardLabel">Votantes</span>
+                  </div>
                   <span className="reportesCardValue">{stats.votantes}</span>
                 </div>
                 <div className="reportesCard reportesCardTotal">
-                  <span className="reportesCardLabel">Total de votos</span>
+                  <div className="reportesCardLabelRow">
+                    <span className="reportesCardIconWrap">{tabIcons.reportes}</span>
+                    <span className="reportesCardLabel">Total de votos</span>
+                  </div>
                   <span className="reportesCardValue">{stats.referentes + stats.punteros + stats.votantes}</span>
                 </div>
               </div>
@@ -3253,6 +3361,19 @@ export default function PersonasPage(): React.JSX.Element {
                           </label>
                           <div className="personasActions personasFieldFull">
                             <button className="personasButton" disabled={adminSubmitting} type="submit">
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                <path d="M17 21v-8H7v8" />
+                                <path d="M7 3v5h10" />
+                              </svg>
                               {adminSubmitting ? 'Guardando...' : adminEditingId != null ? 'Guardar cambios' : 'Crear administrador'}
                             </button>
                             <button
@@ -3260,6 +3381,16 @@ export default function PersonasPage(): React.JSX.Element {
                               className="personasButton personasButtonSecondary"
                               onClick={() => { setAdminShowForm(false); setAdminEditingId(null) }}
                             >
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                aria-hidden="true"
+                              >
+                                <path d="M18 6 6 18" />
+                                <path d="M6 6l12 12" />
+                              </svg>
                               Cancelar
                             </button>
                             <div className="personasStatus" role="status" aria-live="polite">
@@ -3967,6 +4098,19 @@ export default function PersonasPage(): React.JSX.Element {
               )}
               <div className="personasActions">
                 <button className="personasButton" disabled={isSubmitting} type="submit">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <path d="M17 21v-8H7v8" />
+                    <path d="M7 3v5h8" />
+                  </svg>
                   {isSubmitting
                     ? 'Guardando...'
                     : editingId != null
@@ -3974,6 +4118,10 @@ export default function PersonasPage(): React.JSX.Element {
                       : `Crear ${tab.singular}`}
                 </button>
                 <button type="button" className="personasButton personasButtonSecondary" onClick={closeForm}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="M18 6 6 18" />
+                    <path d="M6 6l12 12" />
+                  </svg>
                   Cancelar
                 </button>
                 <div className="personasStatus" role="status" aria-live="polite">
@@ -4021,12 +4169,41 @@ export default function PersonasPage(): React.JSX.Element {
               <tbody>
                 {paginatedList.map((row) => (
                   <tr key={`persona-${row.Id}`}>
-                    <td>{`${row.Apellido}, ${row.Nombre}`}</td>
+                    <td>
+                      <div className="personasRoleNameWrap">
+                        {tab.rol === 1 ? (
+                          <span className="roleBadge roleBadge--grupo">Grupo</span>
+                        ) : tab.rol === 2 ? (
+                          <span className="roleBadge roleBadge--referente">Referente</span>
+                        ) : tab.rol === 3 ? (
+                          <span className="roleBadge roleBadge--puntero">Puntero</span>
+                        ) : (
+                          <span className="roleBadge roleBadge--votante">Votante</span>
+                        )}
+                        <span
+                          className={
+                            tab.rol === 1
+                              ? 'roleName--grupo'
+                              : tab.rol === 2
+                                ? 'roleName--referente'
+                                : tab.rol === 3
+                                  ? 'roleName--puntero'
+                                  : 'roleName--votante'
+                          }
+                        >
+                          {`${row.Apellido}, ${row.Nombre}`}
+                        </span>
+                      </div>
+                    </td>
                     <td>{row.DNI}</td>
                     <td>{row.Telefono ?? '—'}</td>
                     <td>{row.EscuelaNombre ?? '—'}</td>
                     <td>{row.NroMesa ?? '—'}</td>
-                    {tab.leaderRole != null && <td>{row.LiderNombre ?? '—'}</td>}
+                    {tab.leaderRole != null && (
+                      <td>
+                        {row.LiderNombre ?? '—'}
+                      </td>
+                    )}
                     <td className="personasTableActions">
                       <button
                         type="button"

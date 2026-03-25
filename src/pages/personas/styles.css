@@ -211,6 +211,12 @@
 
 .personasSearchWrap.personasSearchWrapDisabled .personasSearchIcon {
   color: #adb5bd;
+  opacity: 0.55;
+}
+
+.personasSearchWrap.personasSearchWrapDisabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .personasSearchIcon {
@@ -993,6 +999,70 @@
   background: var(--accent-bg);
 }
 
+/* ----- Role badges (Grupo / Referente / Puntero / Votante) ----- */
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.roleBadge--grupo {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.roleBadge--referente {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
+  font-weight: 750;
+}
+
+.roleBadge--puntero {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #fde68a;
+  font-weight: 700;
+}
+
+.roleBadge--votante {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #e5e7eb;
+  font-weight: 650;
+}
+
+.roleName--grupo {
+  font-weight: 850;
+}
+
+.roleName--referente {
+  font-weight: 750;
+}
+
+.roleName--puntero {
+  font-weight: 650;
+}
+
+.roleName--votante {
+  font-weight: 550;
+}
+
+.personasRoleNameWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .personasLeaderDropdownEmpty {
   padding: 10px 12px;
   color: var(--text-muted);
@@ -1009,8 +1079,14 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  justify-content: center;
   flex-wrap: wrap;
   margin-top: 8px;
+}
+
+.personasActions .personasStatus {
+  width: 100%;
+  text-align: center;
 }
 
 .personasButton {
@@ -1118,6 +1194,23 @@
   font-size: 2rem;
   font-weight: 600;
   color: var(--text-h);
+}
+
+.reportesCardLabelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reportesCardIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reportesCardIconWrap svg {
+  width: 18px;
+  height: 18px;
 }
 
 .reportesCardTotal .reportesCardValue {
