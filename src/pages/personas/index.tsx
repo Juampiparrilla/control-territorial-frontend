@@ -141,6 +141,29 @@ export default function PersonasPage(): React.JSX.Element {
   const [adminSuccess, setAdminSuccess] = React.useState<string | null>(null)
 
   const [showAppHelpModal, setShowAppHelpModal] = React.useState(false)
+  const [showReportStructureInfoDrawer, setShowReportStructureInfoDrawer] = React.useState(false)
+
+  function openReportStructureInfoDrawer() {
+    setShowReportStructureInfoDrawer(true)
+    agentLog({
+      runId: 'post-fix',
+      hypothesisId: 'H_REPORT_STRUCTURE_INFO_DRAWER_OPEN',
+      location: 'src/pages/personas/index.tsx:report-structure-info-open',
+      message: 'Opened report structure info drawer',
+      data: {},
+    })
+  }
+
+  function closeReportStructureInfoDrawer() {
+    setShowReportStructureInfoDrawer(false)
+    agentLog({
+      runId: 'post-fix',
+      hypothesisId: 'H_REPORT_STRUCTURE_INFO_DRAWER_CLOSE',
+      location: 'src/pages/personas/index.tsx:report-structure-info-close',
+      message: 'Closed report structure info drawer',
+      data: {},
+    })
+  }
 
   function resetPadronImportState() {
     setPadronStep(1)
@@ -610,6 +633,39 @@ export default function PersonasPage(): React.JSX.Element {
       })
       .finally(() => setReportesListsLoading(false))
   }, [tab.isReportes])
+
+  React.useEffect(() => {
+    if (!tab.isReportes) return
+    if (reportesListsLoading) return
+
+    // #region agent log
+    agentLog({
+      runId: 'post-fix',
+      hypothesisId: 'H_REPORTES_CARDS_ONLY_TWO',
+      location: 'src/pages/personas/index.tsx:reportes-cards-only-two',
+      message: 'Reportes tab rendered: only Cantidades totales + Reportes por selección',
+      data: { showCantidadesTotales: true, showReportesPorSeleccion: true, showOtros: false },
+    })
+    // #endregion
+
+    requestAnimationFrame(() => {
+      const filtrosEl = document.querySelector<HTMLElement>('.reportesListadoCardFiltros')
+      const totalesEl = document.querySelector<HTMLElement>('.reportesListadoCardTotales')
+
+      agentLog({
+        runId: 'post-fix',
+        hypothesisId: 'H_REPORTES_CARDS_ORDER_WIDTH',
+        location: 'src/pages/personas/index.tsx:reportes-cards-order-width-measure',
+        message: 'Measure reportes cards order + width',
+        data: {
+          filtrosTop: filtrosEl?.getBoundingClientRect().top ?? null,
+          totalesTop: totalesEl?.getBoundingClientRect().top ?? null,
+          filtrosWidth: filtrosEl?.getBoundingClientRect().width ?? null,
+          totalesWidth: totalesEl?.getBoundingClientRect().width ?? null,
+        },
+      })
+    })
+  }, [tab.isReportes, reportesListsLoading, reportesGrupoId, reportesReferenteId, reportesPunteroId])
 
   const reportesGruposSorted = React.useMemo(() => {
     const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
@@ -2702,7 +2758,7 @@ export default function PersonasPage(): React.JSX.Element {
             </h2>
             <p className="personasPanelDescription">
               {tab.isReportes
-                ? 'Estadísticas por rol: referentes, punteros, votantes y total de votos.'
+                ? 'Listados para ver o imprimir.'
                 : tab.id === 'inicio'
                 ? 'Panel principal con estadísticas generales.'
                 : tab.id === 'configuracion'
@@ -3346,114 +3402,10 @@ export default function PersonasPage(): React.JSX.Element {
           </div>
         ) : tab.isReportes ? (
           <div key="reportesPanel" className="reportesPanel">
-            <h3 className="reportesListadosTitle">Listados para ver o imprimir</h3>
             {reportesListsLoading ? (
               <p className="personasLoading">Cargando listados...</p>
             ) : (
               <div className="reportesListadosWrap">
-                <div className="reportesRow reportesRowTop">
-                  <div className="reportesListadoCard">
-                    <span className="reportesListadoCardLabel">Todos los referentes</span>
-                    <span className="reportesListadoCardCount">{reportesReferentes.length} referentes</span>
-                    <div className="reportesListadoCardActions">
-                      <button
-                        type="button"
-                        className="personasButton personasButtonSecondary personasIconButton"
-                        onClick={() => viewReportFromReportes(2)}
-                        disabled={reportesReferentes.length === 0}
-                        title="Ver reporte"
-                        aria-label="Ver reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="personasButton personasIconButton"
-                        onClick={() => printReportFromReportes(2)}
-                        disabled={reportesReferentes.length === 0}
-                        title="Imprimir reporte"
-                        aria-label="Imprimir reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M6 9V3h12v6" />
-                          <path d="M6 17v4h12v-4" />
-                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
-                          <path d="M9 17h6" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="reportesListadoCard">
-                    <span className="reportesListadoCardLabel">Todos los punteros</span>
-                    <span className="reportesListadoCardCount">{reportesPunteros.length} punteros</span>
-                    <div className="reportesListadoCardActions">
-                      <button
-                        type="button"
-                        className="personasButton personasButtonSecondary personasIconButton"
-                        onClick={() => viewReportFromReportes(3)}
-                        disabled={reportesPunteros.length === 0}
-                        title="Ver reporte"
-                        aria-label="Ver reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="personasButton personasIconButton"
-                        onClick={() => printReportFromReportes(3)}
-                        disabled={reportesPunteros.length === 0}
-                        title="Imprimir reporte"
-                        aria-label="Imprimir reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M6 9V3h12v6" />
-                          <path d="M6 17v4h12v-4" />
-                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
-                          <path d="M9 17h6" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="reportesListadoCard reportesListadoCardJerarquia">
-                    <span className="reportesListadoCardLabel">Todos los votantes</span>
-                    <span className="reportesListadoCardCount">{reportesVotantes.length} votantes</span>
-                    <div className="reportesListadoCardActions">
-                      <button
-                        type="button"
-                        className="personasButton personasButtonSecondary personasIconButton"
-                        onClick={viewJerarquiaReport}
-                        title="Ver reporte"
-                        aria-label="Ver reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="personasButton personasIconButton"
-                        onClick={printJerarquiaReport}
-                        title="Imprimir reporte"
-                        aria-label="Imprimir reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M6 9V3h12v6" />
-                          <path d="M6 17v4h12v-4" />
-                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
-                          <path d="M9 17h6" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="reportesRow reportesRowMid">
                   <div className="reportesListadoCard reportesListadoCardTotales">
                     <span className="reportesListadoCardLabel">Cantidades totales</span>
@@ -3463,7 +3415,7 @@ export default function PersonasPage(): React.JSX.Element {
                     <div className="reportesListadoCardActions">
                       <button
                         type="button"
-                        className="personasButton personasButtonSecondary personasIconButton"
+                        className="personasButton personasButtonPrimary reportesActionButtonWithText"
                         onClick={viewCantidadesTotalesReport}
                         disabled={cantidadesTotalesRows.length === 0}
                         title="Ver reporte"
@@ -3473,10 +3425,11 @@ export default function PersonasPage(): React.JSX.Element {
                           <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
                           <circle cx="12" cy="12" r="3" />
                         </svg>
+                        <span className="reportesActionLabel">Ver reporte</span>
                       </button>
                       <button
                         type="button"
-                        className="personasButton personasIconButton"
+                        className="personasButton personasButtonSecondary reportesActionButtonWithText"
                         onClick={printCantidadesTotalesReport}
                         disabled={cantidadesTotalesRows.length === 0}
                         title="Imprimir reporte"
@@ -3488,39 +3441,7 @@ export default function PersonasPage(): React.JSX.Element {
                           <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
                           <path d="M9 17h6" />
                         </svg>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="reportesListadoCard reportesListadoCardVehiculos">
-                    <span className="reportesListadoCardLabel">Vehículos</span>
-                    <span className="reportesListadoCardCount">Próximamente</span>
-                    <div className="reportesListadoCardActions">
-                      <button
-                        type="button"
-                        className="personasButton personasButtonSecondary personasIconButton"
-                        disabled
-                        title="Ver reporte"
-                        aria-label="Ver reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
-                          <circle cx="12" cy="12" r="3" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="personasButton personasIconButton"
-                        disabled
-                        title="Imprimir reporte"
-                        aria-label="Imprimir reporte"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                          <path d="M6 9V3h12v6" />
-                          <path d="M6 17v4h12v-4" />
-                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
-                          <path d="M9 17h6" />
-                        </svg>
+                        <span className="reportesActionLabel">Imprimir reporte</span>
                       </button>
                     </div>
                   </div>
@@ -3528,10 +3449,17 @@ export default function PersonasPage(): React.JSX.Element {
 
                 <div className="reportesRow reportesRowBottom">
                   <div className="reportesListadoCard reportesListadoCardFiltros">
-                    <span className="reportesListadoCardLabel">Reportes por selección</span>
-                    <span className="reportesListadoCardCount">
-                      Elegí grupo, referente y/o puntero para generar listados específicos.
-                    </span>
+                    <div className="reportesStructureHeaderRow">
+                      <span className="reportesListadoCardLabel">Reporte por estructura</span>
+                      <button
+                        type="button"
+                        className="reportesStructureInfoButton"
+                        onClick={openReportStructureInfoDrawer}
+                        aria-label="Ver ayuda de filtros de estructura"
+                      >
+                        i
+                      </button>
+                    </div>
                     <div className="reportesFilters">
                     <label className="reportesFilter">
                       <span>Grupo</span>
@@ -3550,7 +3478,7 @@ export default function PersonasPage(): React.JSX.Element {
                           })
                         }}
                       >
-                        <option value="">Seleccione grupo</option>
+                      <option value="">Todos los grupos</option>
                         {reportesGruposSorted.map((g) => (
                           <option key={`rep-gru-${g.Id}`} value={g.Id}>
                             {g.Apellido} {g.Nombre} (DNI {g.DNI})
@@ -3576,7 +3504,9 @@ export default function PersonasPage(): React.JSX.Element {
                             })
                           }}
                         >
-                          <option value="">Seleccione referente</option>
+                          <option value="">
+                            {reportesReferenteSelectDisabled ? 'Primero seleccioná un grupo' : 'Todos los referentes'}
+                          </option>
                         {reportesReferentesOptions.map((r) => (
                             <option key={`rep-ref-${r.Id}`} value={r.Id}>
                               {r.Apellido} {r.Nombre} (DNI {r.DNI})
@@ -3602,7 +3532,9 @@ export default function PersonasPage(): React.JSX.Element {
                             })
                           }}
                         >
-                          <option value="">Seleccione puntero</option>
+                          <option value="">
+                            {reportesPunteroSelectDisabled ? 'Primero seleccioná un referente' : 'Todos los punteros'}
+                          </option>
                           {reportesPunterosOptions.map((p) => (
                             <option key={`rep-pun-${p.Id}`} value={p.Id}>
                               {p.Apellido} {p.Nombre} (DNI {p.DNI})
@@ -3611,26 +3543,46 @@ export default function PersonasPage(): React.JSX.Element {
                         </select>
                       </label>
                     </div>
+
+                    <div className="reportesHierarchySummary" aria-live="polite">
+                      <div className="reportesHierarchySummaryText">
+                        Se generará:{' '}
+                        <span className="reportesHierarchySummaryValue">
+                          {(() => {
+                            const grupo = reportesGrupoId != null ? reportesGruposSorted.find((g) => g.Id === reportesGrupoId) : null
+                            const referente = reportesReferenteId != null ? reportesReferentesSorted.find((r) => r.Id === reportesReferenteId) : null
+                            const puntero = reportesPunteroId != null ? reportesPunterosSorted.find((p) => p.Id === reportesPunteroId) : null
+
+                            if (reportesGrupoId == null) return 'Reporte de grupos (listado general)'
+                            if (reportesReferenteId == null) return `Reporte de referentes del grupo ${grupo ? `${grupo.Nombre} ${grupo.Apellido}` : ''}`.trim()
+                            if (reportesPunteroId == null) return `Reporte de punteros del referente ${referente ? `${referente.Nombre} ${referente.Apellido}` : ''}`.trim()
+                            return `Reporte de votantes del puntero ${puntero ? `${puntero.Nombre} ${puntero.Apellido}` : ''}`.trim()
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+
                     <div className="reportesListadoCardActions">
                       <button
                         type="button"
-                        className="personasButton personasButtonSecondary personasIconButton reportesActionButton"
+                        className="personasButton personasButtonPrimary reportesActionButtonWithText"
                         onClick={viewReportesPorSeleccion}
                         disabled={reportesGrupos.length === 0}
-                        title="Ver listado"
+                        title="Ver reporte"
                         aria-label="Ver listado"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                           <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
                           <circle cx="12" cy="12" r="3" />
                         </svg>
+                        <span className="reportesActionLabel">Ver reporte</span>
                       </button>
                       <button
                         type="button"
-                        className="personasButton personasIconButton reportesActionButton"
+                        className="personasButton personasButtonSecondary reportesActionButtonWithText"
                         onClick={printReportesPorSeleccion}
                         disabled={reportesGrupos.length === 0}
-                        title="Imprimir listado"
+                        title="Imprimir reporte"
                         aria-label="Imprimir listado"
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -3639,10 +3591,52 @@ export default function PersonasPage(): React.JSX.Element {
                           <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
                           <path d="M9 17h6" />
                         </svg>
+                        <span className="reportesActionLabel">Imprimir reporte</span>
                       </button>
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {showReportStructureInfoDrawer && (
+              <div
+                className="reportesStructureInfoOverlay"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="reportesStructureInfoTitle"
+                onMouseDown={(e) => {
+                  if (e.target === e.currentTarget) closeReportStructureInfoDrawer()
+                }}
+              >
+                <aside className="reportesStructureInfoDrawer">
+                  <div className="reportesStructureInfoHeader">
+                    <h3 id="reportesStructureInfoTitle" className="reportesStructureInfoTitle">
+                      Ayuda: filtros por estructura
+                    </h3>
+                    <button
+                      type="button"
+                      className="reportesStructureInfoClose"
+                      onClick={closeReportStructureInfoDrawer}
+                      aria-label="Cerrar"
+                      title="Cerrar"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="reportesStructureInfoBody">
+                    <p className="reportesStructureInfoP">
+                      Seleccioná hasta qué nivel querés filtrar la estructura.
+                    </p>
+                    <p className="reportesStructureInfoP">Los filtros son opcionales.</p>
+                    <ul className="reportesStructureInfoList">
+                      <li>Sin filtros: se mostrará el listado general.</li>
+                      <li>Con grupo: se mostrarán sus referentes.</li>
+                      <li>Con referente: se mostrarán sus punteros.</li>
+                      <li>Con puntero: se mostrarán sus votantes.</li>
+                    </ul>
+                  </div>
+                </aside>
               </div>
             )}
           </div>

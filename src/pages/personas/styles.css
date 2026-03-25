@@ -1152,17 +1152,25 @@
 }
 
 .reportesRowMid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  grid-row: 2;
 }
 
 .reportesRowBottom {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  grid-row: 1;
 }
 
 .reportesListadoCardFiltros {
   width: 100%;
   max-width: 100%;
   grid-column: 1 / -1;
+}
+
+.reportesListadoCardTotales {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 100%;
 }
 
 .reportesListadoCardGhost {
@@ -1238,6 +1246,179 @@
   line-height: 1.1;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.reportesHierarchySummary {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font-weight: 600;
+}
+
+.reportesHierarchySummaryText {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.reportesHierarchySummaryValue {
+  font-weight: 800;
+}
+
+.reportesStructureInfoButton {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.reportesStructureInfoButton:hover {
+  background: var(--bg-subtle);
+}
+
+.reportesStructureInfoOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  z-index: 1150;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.reportesStructureInfoDrawer {
+  background: var(--bg);
+  border-radius: 10px 0 0 10px;
+  width: 520px;
+  max-width: 100%;
+  height: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  border-left: 4px solid var(--accent);
+  overflow: auto;
+  animation: personasHelpDrawerIn 0.18s ease-out;
+}
+
+.reportesStructureInfoHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.reportesStructureInfoTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 650;
+  color: var(--text-h);
+}
+
+.reportesStructureInfoClose {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reportesStructureInfoClose:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reportesStructureHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.reportesStructureInfoBody {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reportesStructureInfoP {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 1rem;
+}
+
+.reportesStructureInfoList {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 1rem;
+}
+
+@media (max-width: 760px) {
+  .reportesStructureInfoDrawer {
+    width: 100%;
+    border-radius: 10px 10px 0 0;
+    animation: none;
+  }
+  .reportesStructureInfoOverlay {
+    justify-content: center;
+    align-items: flex-end;
+  }
+}
+
+.reportesActionButtonWithText {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px;
+  min-width: auto !important;
+  padding: 10px 14px !important;
+}
+
+.reportesActionEmoji {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.reportesActionLabel {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.reportesListadoCardFiltros .reportesListadoCardActions {
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.reportesListadoCardTotales .reportesListadoCardActions {
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.reportesFilter span {
+  font-weight: 600;
 }
 
 @media (max-width: 900px) {
