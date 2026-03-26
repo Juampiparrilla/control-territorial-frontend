@@ -1165,7 +1165,28 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 16px;
-  margin-bottom: 32px;
+  margin-bottom: 8px;
+}
+
+.reportesInicioDiagramWrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  margin-top: 28px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.reportesInicioDiagram {
+  display: block;
+  max-width: min(1000px, 100%);
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  background: var(--bg);
 }
 
 .reportesCard {
@@ -1188,6 +1209,14 @@
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-muted);
+}
+
+.reportesCardHint {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.35;
 }
 
 .reportesCardValue {

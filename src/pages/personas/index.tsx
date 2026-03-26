@@ -144,6 +144,15 @@ export default function PersonasPage(): React.JSX.Element {
 
   const [showAppHelpModal, setShowAppHelpModal] = React.useState(false)
   const [showReportStructureInfoDrawer, setShowReportStructureInfoDrawer] = React.useState(false)
+  const [showReferentesPrintModal, setShowReferentesPrintModal] = React.useState(false)
+  const [showPunterosPrintModal, setShowPunterosPrintModal] = React.useState(false)
+  const [showVotantesPrintModal, setShowVotantesPrintModal] = React.useState(false)
+
+  type PersonasDownloadModalTarget =
+    | { kind: 'tab'; rol: 2 | 3 | 4 }
+    | { kind: 'reportes'; report: 'cantidades' | 'escuelaMesa' | 'estructura' }
+
+  const [downloadModalTarget, setDownloadModalTarget] = React.useState<PersonasDownloadModalTarget | null>(null)
 
   function openReportStructureInfoDrawer() {
     setShowReportStructureInfoDrawer(true)
@@ -704,12 +713,13 @@ export default function PersonasPage(): React.JSX.Element {
   }, [reportesReferentes])
 
   const reportesReferentesOptions = React.useMemo(() => {
-    if (reportesGrupoId == null) return reportesReferentesSorted
+    if (reportesGrupoId == null) return []
     return reportesReferentesSorted.filter((r) => r.LiderId === reportesGrupoId)
   }, [reportesGrupoId, reportesReferentesSorted])
 
+  const reportesReferenteBloqueadoSinGrupo = reportesGrupoId == null
+
   const reportesReferenteSelectDisabled = React.useMemo(() => {
-    // Bloquear hasta que se seleccione Grupo; luego bloquear si no hay referentes
     if (reportesGrupoId == null) return true
     return reportesReferentesOptions.length === 0
   }, [reportesGrupoId, reportesReferentesOptions.length])
@@ -749,36 +759,34 @@ export default function PersonasPage(): React.JSX.Element {
     return [...reportesPunterosDeReferente].sort(sortByApellidoNombre)
   }, [reportesPunterosDeReferente])
 
+  const reportesPunterosOptions = React.useMemo(() => {
+    if (reportesReferenteId == null) return []
+    return reportesPunterosDeReferenteSorted
+  }, [reportesReferenteId, reportesPunterosDeReferenteSorted])
+
+  const reportesPunteroBloqueadoSinReferente = reportesReferenteId == null
+
   const reportesPunteroSelectDisabled = React.useMemo(() => {
-    // Si no hay referente seleccionado, o el referente no tiene punteros, bloquear selector
     if (reportesReferenteId == null) return true
     return reportesPunterosDeReferenteSorted.length === 0
   }, [reportesReferenteId, reportesPunterosDeReferenteSorted.length])
 
-  const reportesPunterosOptions = React.useMemo(() => {
-    return reportesReferenteId == null ? reportesPunterosSorted : reportesPunterosDeReferenteSorted
-  }, [reportesReferenteId, reportesPunterosSorted, reportesPunterosDeReferenteSorted])
-
   React.useEffect(() => {
-    // Cuando cambia el referente, mantener puntero válido o limpiar/auto-seleccionar
     if (!tab.isReportes) return
-    if (reportesReferenteId == null) {
-      if (reportesPunteroId != null) setReportesPunteroId(null)
-      return
-    }
-    const allowed = reportesPunterosDeReferenteSorted
+    const allowed = reportesPunterosOptions
     const isValid = reportesPunteroId != null && allowed.some((p) => p.Id === reportesPunteroId)
     if (isValid) return
-    // No autoseleccionar: volver a placeholder si no es válido
-    setReportesPunteroId(null)
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H19',
-      location: 'src/pages/personas/index.tsx:reportes-sync-puntero',
-      message: 'Synced puntero selection after referente change',
-      data: { referenteId: reportesReferenteId, prevPunteroId: reportesPunteroId, nextPunteroId: null, options: allowed.length },
-    })
-  }, [tab.isReportes, reportesReferenteId, reportesPunterosDeReferenteSorted, reportesPunteroId])
+    if (reportesPunteroId != null) {
+      setReportesPunteroId(null)
+      agentLog({
+        runId: 'pre-fix',
+        hypothesisId: 'H19',
+        location: 'src/pages/personas/index.tsx:reportes-sync-puntero',
+        message: 'Synced puntero after filter options change',
+        data: { referenteId: reportesReferenteId, grupoId: reportesGrupoId, options: allowed.length },
+      })
+    }
+  }, [tab.isReportes, reportesPunterosOptions, reportesPunteroId, reportesReferenteId, reportesGrupoId])
 
   React.useEffect(() => {
     // Cuando cambia el grupo, resetear referente y puntero (placeholder)
@@ -951,6 +959,8 @@ export default function PersonasPage(): React.JSX.Element {
       allLeaders?: PersonaResponseDTO[]
       includeRolColumn?: boolean
       headerPathLine?: string
+      /** Solo rol referentes (2): una sección por grupo con salto de página al imprimir */
+      referentesPrintLayout?: 'all' | 'byGroup'
     }
   ): string {
     const now = new Date()
@@ -1028,33 +1038,41 @@ export default function PersonasPage(): React.JSX.Element {
     const isReferentesReport = rol === 2
     const emptyCell = `<span class="reportEmptyValue">-</span>`
     const colspan = includeRolColumn ? 7 : 6
+    const emptySubordinatesMessage =
+      rol === 2 ? 'Sin referentes asignados' : rol === 4 ? 'Sin votantes asignados' : 'Sin punteros asignados'
 
-    const rowsHtml = groupEntries
-      .map(([leaderId, group], groupIndex) => {
-        const leaderName = group.leaderName
-        const parts = leaderName.split(' ')
-        const leaderApellido = parts.length > 1 ? parts[parts.length - 1] : leaderName
-        const leaderNombre = parts.length > 1 ? parts.slice(0, -1).join(' ') : ''
-        const leaderEntity = leaderId > 0 ? leaderById?.get(leaderId) : undefined
-        const leaderDniValue = leaderId > 0 ? (leaderById?.get(leaderId)?.DNI ?? null) : null
-        const leaderDni = leaderDniValue && leaderDniValue.trim().length > 0 ? leaderDniValue : emptyCell
-        const leaderTelefonoValue = leaderEntity?.Telefono ?? null
-        const leaderEscuelaValue = leaderEntity?.EscuelaNombre ?? null
-        const leaderMesaValue = leaderEntity?.NroMesa ?? null
+    const isReferentesByGroupPrint = rol === 2 && options?.referentesPrintLayout === 'byGroup'
 
-        const sortedPersons = [...group.persons].sort((a, b) => {
-          const ap = (a.Apellido || '').toLowerCase()
-          const bp = (b.Apellido || '').toLowerCase()
-          if (ap < bp) return -1
-          if (ap > bp) return 1
-          const an = (a.Nombre || '').toLowerCase()
-          const bn = (b.Nombre || '').toLowerCase()
-          if (an < bn) return -1
-          if (an > bn) return 1
-          return 0
-        })
+    function buildGroupTbodyRows(
+      entry: [number, { leaderName: string; persons: PersonaResponseDTO[] }],
+      groupIndex: number,
+      includeTrailingSpacer: boolean
+    ): string {
+      const [leaderId, group] = entry
+      const leaderName = group.leaderName
+      const parts = leaderName.split(' ')
+      const leaderApellido = parts.length > 1 ? parts[parts.length - 1] : leaderName
+      const leaderNombre = parts.length > 1 ? parts.slice(0, -1).join(' ') : ''
+      const leaderEntity = leaderId > 0 ? leaderById?.get(leaderId) : undefined
+      const leaderDniValue = leaderId > 0 ? (leaderById?.get(leaderId)?.DNI ?? null) : null
+      const leaderDni = leaderDniValue && leaderDniValue.trim().length > 0 ? leaderDniValue : emptyCell
+      const leaderTelefonoValue = leaderEntity?.Telefono ?? null
+      const leaderEscuelaValue = leaderEntity?.EscuelaNombre ?? null
+      const leaderMesaValue = leaderEntity?.NroMesa ?? null
 
-        const leaderRow = `
+      const sortedPersons = [...group.persons].sort((a, b) => {
+        const ap = (a.Apellido || '').toLowerCase()
+        const bp = (b.Apellido || '').toLowerCase()
+        if (ap < bp) return -1
+        if (ap > bp) return 1
+        const an = (a.Nombre || '').toLowerCase()
+        const bn = (b.Nombre || '').toLowerCase()
+        if (an < bn) return -1
+        if (an > bn) return 1
+        return 0
+      })
+
+      const leaderRow = `
             <tr class="${isReferentesReport ? 'reportLeaderRow reportLeaderRow--referentes' : 'reportLeaderRow'}">
               <td>${groupIndex + 1}</td>
               ${includeRolColumn ? `<td><span class="roleBadge roleBadge--${leaderRoleKey}">${leaderRolLabel}</span></td>` : ''}
@@ -1065,13 +1083,13 @@ export default function PersonasPage(): React.JSX.Element {
               <td>${leaderMesaValue != null ? leaderMesaValue : emptyCell}</td>
             </tr>`
 
-        const subRows = sortedPersons.length
-          ? sortedPersons
-              .map((p, idx) => {
-                const phone = p.Telefono && p.Telefono.trim().length > 0 ? p.Telefono : emptyCell
-                const school = p.EscuelaNombre && p.EscuelaNombre.trim().length > 0 ? p.EscuelaNombre : emptyCell
-                const mesa = p.NroMesa != null ? p.NroMesa : emptyCell
-                return `
+      const subRows = sortedPersons.length
+        ? sortedPersons
+            .map((p, idx) => {
+              const phone = p.Telefono && p.Telefono.trim().length > 0 ? p.Telefono : emptyCell
+              const school = p.EscuelaNombre && p.EscuelaNombre.trim().length > 0 ? p.EscuelaNombre : emptyCell
+              const mesa = p.NroMesa != null ? p.NroMesa : emptyCell
+              return `
                 <tr class="${isReferentesReport ? 'reportSubRow reportSubRow--referentes' : 'reportSubRow'}">
                   <td>${groupIndex + 1}.${idx + 1}</td>
                   ${includeRolColumn ? `<td class="reportRolCell"><span class="roleBadge roleBadge--${subRoleKey}">${subRolLabel}</span></td>` : ''}
@@ -1081,23 +1099,23 @@ export default function PersonasPage(): React.JSX.Element {
                   <td>${school}</td>
                   <td>${mesa}</td>
                 </tr>`
-              })
-              .join('')
-          : `
+            })
+            .join('')
+        : `
             <tr class="reportInfoRow">
               <td></td>
               ${includeRolColumn ? `<td class="reportRolCell"></td>` : ''}
-              <td colspan="${includeRolColumn ? 5 : 5}"><span class="reportInfoTag"><em>Sin referentes asignados</em></span></td>
+              <td colspan="${includeRolColumn ? 5 : 5}"><span class="reportInfoTag"><em>${emptySubordinatesMessage}</em></span></td>
             </tr>`
 
-        const subtotalLabel = isReferentesReport
-          ? `Subtotal del grupo <span class="roleBadge roleBadge--grupo">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span>: ${sortedPersons.length} referentes`
-          : rol === 4
-            ? `Subtotal del puntero <span class="roleBadge roleBadge--puntero">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span>: ${sortedPersons.length} votantes`
-            : `Subtotal : ${sortedPersons.length}`
+      const subtotalLabel = isReferentesReport
+        ? `Subtotal del grupo <span class="roleBadge roleBadge--grupo">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span>: ${sortedPersons.length} referentes`
+        : rol === 4
+          ? `Subtotal del puntero <span class="roleBadge roleBadge--puntero">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span>: ${sortedPersons.length} votantes`
+          : `Subtotal : ${sortedPersons.length}`
 
-        const subtotalRow = includeRolColumn
-          ? `
+      const subtotalRow = includeRolColumn
+        ? `
             <tr class="${isReferentesReport ? 'reportSubTotalRow reportSubTotalRow--referentes' : 'reportSubTotalRow'}">
               <td></td>
               <td></td>
@@ -1107,14 +1125,19 @@ export default function PersonasPage(): React.JSX.Element {
               <td></td>
               <td></td>
             </tr>`
-          : ''
+        : ''
 
-        const spacer = groupIndex < groupEntries.length - 1
-          ? `<tr class="reportGroupSpacer"><td colspan="${colspan}"></td></tr>`
-          : ''
-        return leaderRow + subRows + subtotalRow + spacer
-      })
-      .join('')
+      const spacer = includeTrailingSpacer ? `<tr class="reportGroupSpacer"><td colspan="${colspan}"></td></tr>` : ''
+      return leaderRow + subRows + subtotalRow + spacer
+    }
+
+    const rowsHtml = isReferentesByGroupPrint
+      ? ''
+      : groupEntries
+          .map((entry, groupIndex) =>
+            buildGroupTbodyRows(entry, groupIndex, groupIndex < groupEntries.length - 1)
+          )
+          .join('')
 
     const totalRowHtml = includeRolColumn
       ? (() => {
@@ -1135,6 +1158,113 @@ export default function PersonasPage(): React.JSX.Element {
             </tr>`
         })()
       : ''
+
+    const colgroupHtml = includeRolColumn
+      ? `<colgroup>
+              <col style="width:6%">
+              <col style="width:8%">
+              <col style="width:32%">
+              <col style="width:11%">
+              <col style="width:14%">
+              <col style="width:20%">
+              <col style="width:9%">
+            </colgroup>`
+      : ''
+
+    const theadHtml = `
+            <thead>
+              <tr>
+                <th>Nº</th>
+                ${includeRolColumn ? '<th>Rol</th>' : ''}
+                <th>Apellido y Nombre</th>
+                <th>DNI</th>
+                <th>Teléfono</th>
+                <th>Escuela</th>
+                <th>Mesa</th>
+              </tr>
+            </thead>`
+
+    function formatGrupoMetaFromLeaderName(leaderName: string): string {
+      const parts = leaderName.split(' ')
+      const leaderApellido = parts.length > 1 ? parts[parts.length - 1] : leaderName
+      const leaderNombre = parts.length > 1 ? parts.slice(0, -1).join(' ') : ''
+      return `${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}`
+    }
+
+    const headerHtml = (grupoMetaLine: string | null) => `
+          <div class="header">
+            <div class="headerLeft">
+              ${headerPathLine ? `<div class="metaLine">${headerPathLine}</div>` : ''}
+              <h1>${groupTitle}</h1>
+            </div>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              ${
+                headerPathLine
+                  ? ''
+                  : grupoMetaLine != null && grupoMetaLine.length > 0
+                    ? `<div class="metaLine">Grupo: ${grupoMetaLine}</div>`
+                    : ''
+              }
+            </div>
+          </div>`
+
+    let referentesByGroupPrintHtml = ''
+    if (isReferentesByGroupPrint) {
+      // #region agent log
+      agentLog({
+        runId: 'post-fix',
+        hypothesisId: 'H_REF_PRINT_BY_GROUP_BUILD',
+        location: 'src/pages/personas/index.tsx:buildReportHtml-byGroup',
+        message: 'Building referentes report HTML with one print section per group',
+        data: { groupCount: groupEntries.length },
+      })
+      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
+        body: JSON.stringify({
+          sessionId: 'b35ed6',
+          location: 'src/pages/personas/index.tsx:buildReportHtml-byGroup-fetch',
+          message: 'referentesPrintLayout byGroup',
+          data: { groupCount: groupEntries.length },
+          timestamp: Date.now(),
+          runId: 'post-fix',
+          hypothesisId: 'H_REF_PRINT_BY_GROUP_FETCH',
+        }),
+      }).catch(() => {})
+      // #endregion
+      const lastIdx = groupEntries.length - 1
+      referentesByGroupPrintHtml =
+        groupEntries
+          .map((entry, i) => {
+            const tbodyRows = buildGroupTbodyRows(entry, 0, false)
+            const metaGrupo = formatGrupoMetaFromLeaderName(entry[1].leaderName)
+            const sectionClass =
+              i === lastIdx ? 'report-print-section report-print-section--lastBeforeTotal' : 'report-print-section'
+            return `
+          <div class="${sectionClass}">
+            ${headerHtml(metaGrupo)}
+            <table>
+            ${colgroupHtml}
+            ${theadHtml}
+            <tbody>
+              ${tbodyRows}
+            </tbody>
+          </table>
+          </div>`
+          })
+          .join('') +
+        `
+          <div class="report-print-totalSection">
+            ${headerHtml(null)}
+            <table class="report-print-totalTable">
+            ${colgroupHtml}
+            <tbody>
+              ${totalRowHtml}
+            </tbody>
+          </table>
+          </div>`
+    }
 
     const pageTitle = rol === 2 ? 'Listado de Referentes' : rol === 3 ? 'Listado de Punteros' : 'Listado de Votantes'
     return `
@@ -1173,20 +1303,22 @@ export default function PersonasPage(): React.JSX.Element {
             tr.reportInfoRow td:nth-child(7) { color: #cbd5e1; }
             .reportInfoTag {
               display: inline-block;
-              background: #f1f5f9;
-              border: 1px solid #e2e8f0;
-              border-radius: 999px;
-              padding: 2px 10px;
-              color: #475569;
-              font-size: 11px;
-              line-height: 1.2;
+              background: #f9fafb;
+              border: 1px solid #eef0f3;
+              border-radius: 4px;
+              padding: 2px 8px;
+              color: #9ca3af;
+              font-size: 10px;
+              font-weight: 400;
+              line-height: 1.35;
             }
+            .reportInfoTag em { font-style: normal; font-weight: 500; color: #94a3af; }
             tr.reportSubTotalRow { background: #f8fafc; font-weight: 700; color: #1f2937; }
-            tr.reportSubTotalRow--referentes td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; }
-            tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
-            tr.reportGrandTotalRow--referentes td { background: #e2e8f0; border-top: 2px solid #94a3b8; font-size: 12px; }
-            tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
-            tr.reportGroupSpacer td { height: 14px; border: none; background: #fff; }
+            tr.reportSubTotalRow--referentes td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; padding-top: 10px; padding-bottom: 10px; }
+            tr.reportGrandTotalRow { background: #e8ecf1; font-weight: 900; color: #0f172a; }
+            tr.reportGrandTotalRow--referentes td { border-top: 2px solid #94a3b8; font-size: 12px; padding-top: 11px; padding-bottom: 11px; }
+            tr.reportBlankRow td { border: none; height: 10px; background: #fff; }
+            tr.reportGroupSpacer td { height: 10px; border: none; background: #fff; padding-top: 4px; padding-bottom: 4px; }
             .reportEmptyValue { color: #94a3b8; font-size: 11px; }
             /* Role badges (consistent with UI) */
             .roleBadge {
@@ -1209,49 +1341,28 @@ export default function PersonasPage(): React.JSX.Element {
             .roleName--referente { font-weight: 750; }
             .roleName--puntero { font-weight: 650; }
             .roleName--votante { font-weight: 550; }
+            @media print {
+              .report-print-section { page-break-after: always; break-after: page; }
+              .report-print-section--lastBeforeTotal { page-break-after: auto; break-after: auto; }
+              .report-print-totalSection { page-break-before: always; break-before: page; }
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <div class="headerLeft">
-              ${headerPathLine ? `<div class="metaLine">${headerPathLine}</div>` : ''}
-              <h1>${groupTitle}</h1>
-            </div>
-            <div class="meta">
-              <div>Fecha: ${formattedDate}</div>
-              ${headerPathLine ? '' : `<div class="metaLine">Grupo: ${groupName}</div>`}
-            </div>
-          </div>
+          ${
+            isReferentesByGroupPrint
+              ? referentesByGroupPrintHtml
+              : `
+          ${headerHtml(groupName)}
           <table>
-            ${
-              includeRolColumn
-                ? `<colgroup>
-              <col style="width:6%">
-              <col style="width:8%">
-              <col style="width:32%">
-              <col style="width:11%">
-              <col style="width:14%">
-              <col style="width:20%">
-              <col style="width:9%">
-            </colgroup>`
-                : ''
-            }
-            <thead>
-              <tr>
-                <th>Nº</th>
-                ${includeRolColumn ? '<th>Rol</th>' : ''}
-                <th>Apellido y Nombre</th>
-                <th>DNI</th>
-                <th>Teléfono</th>
-                <th>Escuela</th>
-                <th>Mesa</th>
-              </tr>
-            </thead>
+            ${colgroupHtml}
+            ${theadHtml}
             <tbody>
               ${rowsHtml}
               ${totalRowHtml}
             </tbody>
-          </table>
+          </table>`
+          }
         </body>
       </html>
       `
@@ -1260,7 +1371,7 @@ export default function PersonasPage(): React.JSX.Element {
   /** Reporte jerárquico: Referente → Punteros → Votantes (1, 1.1, 1.1.1, 1.1.2, 1.2, …) */
   function buildJerarquiaReportHtml(
     data?: { grupos: PersonaResponseDTO[]; referentes: PersonaResponseDTO[]; punteros: PersonaResponseDTO[]; votantes: PersonaResponseDTO[] },
-    options?: { headerPathLine?: string }
+    options?: { headerPathLine?: string; printLayout?: 'all' | 'byPuntero' }
   ): string {
     const now = new Date()
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
@@ -1302,6 +1413,454 @@ export default function PersonasPage(): React.JSX.Element {
     votantesByLider.forEach((arr) => arr.sort(sortByApellidoNombre))
 
     const emptyValue = '<span class="reportEmptyValue">-</span>'
+
+    if (options?.printLayout === 'byPuntero') {
+      const headerPath = (options?.headerPathLine ?? '').trim()
+
+      const jerarquiaHeaderBlock = (grupoMetaLine: string | null) => `
+          <div class="header">
+            <div class="headerLeft">
+              ${headerPath ? `<div class="metaLine">${headerPath}</div>` : ''}
+              <h1>JERARQUÍA POR GRUPO → REFERENTES → PUNTEROS → VOTANTES</h1>
+            </div>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              ${
+                headerPath
+                  ? ''
+                  : grupoMetaLine != null && grupoMetaLine.length > 0
+                    ? `<div class="metaLine">Grupo: ${grupoMetaLine}</div>`
+                    : ''
+              }
+            </div>
+          </div>`
+
+      const jerarquiaColgroup = `
+            <colgroup>
+              <col style="width:8%">
+              <col style="width:10%">
+              <col style="width:30%">
+              <col style="width:12%">
+              <col style="width:14%">
+              <col style="width:18%">
+              <col style="width:8%">
+            </colgroup>`
+
+      const jerarquiaThead = `
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Rol</th>
+                <th>Apellido y Nombre</th>
+                <th>DNI</th>
+                <th>Teléfono</th>
+                <th>Escuela</th>
+                <th>Mesa</th>
+              </tr>
+            </thead>`
+
+      type JerarquiaPunteroSection = { grupoMeta: string; tbody: string }
+      const sections: JerarquiaPunteroSection[] = []
+      const grupoResumenLines: Array<{ nombre: string; referentes: number; punteros: number; votantes: number }> = []
+
+      let totalReferentes = 0
+      let totalPunteros = 0
+      let totalVotantes = 0
+      grupos.forEach((g) => {
+        const refsForGroup = refsByGrupo.get(g.Id) ?? []
+        let groupPunterosPreview = 0
+        let groupVotantesPreview = 0
+        refsForGroup.forEach((ref) => {
+          const punts = punterosByLider.get(ref.Id) ?? []
+          groupPunterosPreview += punts.length
+          punts.forEach((pun) => {
+            groupVotantesPreview += (votantesByLider.get(pun.Id) ?? []).length
+          })
+        })
+        totalReferentes += refsForGroup.length
+        refsForGroup.forEach((ref) => {
+          totalPunteros += (punterosByLider.get(ref.Id) ?? []).length
+          ;(punterosByLider.get(ref.Id) ?? []).forEach((pun) => {
+            totalVotantes += (votantesByLider.get(pun.Id) ?? []).length
+          })
+        })
+
+        const grupoMeta = `${g.Apellido ?? ''}, ${g.Nombre ?? ''}`.trim().replace(/^,\s*|,\s*$/g, '') || '—'
+        grupoResumenLines.push({
+          nombre: `${g.Apellido}, ${g.Nombre}`.trim() || '—',
+          referentes: refsForGroup.length,
+          punteros: groupPunterosPreview,
+          votantes: groupVotantesPreview,
+        })
+
+        const grupoRowBlock = `
+        <tr class="reportRowGroup">
+          <td class="reportNumGroup">1</td>
+          <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
+          <td>
+            <strong>${g.Apellido}, ${g.Nombre}</strong>
+          </td>
+          <td>${g.DNI}</td>
+          <td>${g.Telefono ?? emptyValue}</td>
+          <td>${g.EscuelaNombre ?? emptyValue}</td>
+          <td>${g.NroMesa ?? emptyValue}</td>
+        </tr>`
+
+        if (refsForGroup.length === 0) {
+          sections.push({
+            grupoMeta,
+            tbody:
+              grupoRowBlock +
+              `
+        <tr class="reportRowEmpty reportRowEmpty--referentes">
+          <td class="reportNumEmpty"></td>
+          <td></td>
+          <td class="reportIndent1"><span class="reportInfoTag"><em>Sin referentes asignados</em></span></td>
+          <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
+        </tr>`,
+          })
+          return
+        }
+
+        refsForGroup.forEach((ref) => {
+          const punterosPreview = punterosByLider.get(ref.Id) ?? []
+          const votantesPreview = punterosPreview.reduce(
+            (acc, pun) => acc + (votantesByLider.get(pun.Id) ?? []).length,
+            0
+          )
+          const refRowBlock = `
+        <tr class="reportRowRef">
+          <td class="reportNumRef">1.1</td>
+          <td><span class="roleBadge roleBadge--referente">Referente</span></td>
+          <td class="reportIndent1">
+            <strong>${ref.Apellido}, ${ref.Nombre}</strong>
+            <div class="reportInlineSummary">Punteros: ${punterosPreview.length} | Votantes: ${votantesPreview}</div>
+          </td>
+          <td>${ref.DNI}</td>
+          <td>${ref.Telefono ?? emptyValue}</td>
+          <td>${ref.EscuelaNombre ?? emptyValue}</td>
+          <td>${ref.NroMesa ?? emptyValue}</td>
+        </tr>`
+
+          if (punterosPreview.length === 0) {
+            sections.push({
+              grupoMeta,
+              tbody:
+                grupoRowBlock +
+                refRowBlock +
+                `
+        <tr class="reportRowEmpty reportRowEmpty--punteros">
+          <td class="reportNumEmpty"></td>
+          <td></td>
+          <td class="reportIndent2"><span class="reportInfoTag"><em>Sin punteros asignados</em></span></td>
+          <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
+        </tr>`,
+            })
+            return
+          }
+
+          punterosPreview.forEach((pun) => {
+            const votantes = votantesByLider.get(pun.Id) ?? []
+            const punRowBlock = `
+        <tr class="reportRowPun">
+          <td class="reportNumPun">1.1.1</td>
+          <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
+          <td class="reportIndent2">
+            ${pun.Apellido}, ${pun.Nombre}
+            <div class="reportInlineSummary">Votantes: ${votantes.length}</div>
+          </td>
+          <td>${pun.DNI}</td>
+          <td>${pun.Telefono ?? emptyValue}</td>
+          <td>${pun.EscuelaNombre ?? emptyValue}</td>
+          <td>${pun.NroMesa ?? emptyValue}</td>
+        </tr>`
+            let votBlock = ''
+            if (votantes.length === 0) {
+              votBlock = `
+        <tr class="reportRowEmpty reportRowEmpty--votantes">
+          <td class="reportNumEmpty"></td>
+          <td></td>
+          <td class="reportIndent3"><span class="reportInfoTag"><em>Sin votantes asignados</em></span></td>
+          <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
+        </tr>`
+            } else {
+              votBlock = votantes
+                .map(
+                  (vot, vk) => `
+        <tr class="reportRowVot">
+          <td class="reportNumVot">1.1.1.${vk + 1}</td>
+          <td class="reportRolVot"><span class="roleBadge roleBadge--votante">Votante</span></td>
+          <td class="reportIndent3">${vot.Apellido}, ${vot.Nombre}</td>
+          <td>${vot.DNI}</td>
+          <td>${vot.Telefono ?? emptyValue}</td>
+          <td>${vot.EscuelaNombre ?? emptyValue}</td>
+          <td>${vot.NroMesa ?? emptyValue}</td>
+        </tr>`
+                )
+                .join('')
+            }
+            sections.push({
+              grupoMeta,
+              tbody: grupoRowBlock + refRowBlock + punRowBlock + votBlock,
+            })
+          })
+        })
+      })
+
+      const lastIdx = sections.length - 1
+      const sectionsBodyHtml = sections
+        .map((s, i) => {
+          const sectionClass =
+            i === lastIdx ? 'report-print-section report-print-section--lastBeforeTotal' : 'report-print-section'
+          return `
+          <div class="${sectionClass}">
+            ${jerarquiaHeaderBlock(headerPath ? null : s.grupoMeta)}
+            <table>
+            ${jerarquiaColgroup}
+            ${jerarquiaThead}
+            <tbody>
+              ${s.tbody}
+            </tbody>
+          </table>
+          </div>`
+        })
+        .join('')
+
+      const grupoResumenBodyRowsHtml = grupoResumenLines
+        .map(
+          (row, ri) => `
+              <tr>
+                <td class="reportGrupoResumenIdx">${ri + 1}</td>
+                <td><strong>${row.nombre}</strong></td>
+                <td class="reportGrupoResumenNum">${row.referentes}</td>
+                <td class="reportGrupoResumenNum">${row.punteros}</td>
+                <td class="reportGrupoResumenNum">${row.votantes}</td>
+              </tr>`
+        )
+        .join('')
+
+      const grupoResumenTableHtml = `
+            <table class="reportGrupoResumenTable">
+              <colgroup>
+                <col class="reportGrupoResumenColIdx" style="width:6%">
+                <col style="width:34%">
+                <col style="width:20%">
+                <col style="width:20%">
+                <col style="width:20%">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="reportGrupoResumenIdx">N.º</th>
+                  <th>Grupo</th>
+                  <th class="reportGrupoResumenThNum">Cantidad de Referentes</th>
+                  <th class="reportGrupoResumenThNum">Cantidad de Punteros</th>
+                  <th class="reportGrupoResumenThNum">Cantidad de Votantes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${grupoResumenBodyRowsHtml}
+              </tbody>
+              <tfoot>
+                <tr class="reportGrupoResumenTotalRow">
+                  <td class="reportGrupoResumenIdx"></td>
+                  <td><strong>Total</strong></td>
+                  <td class="reportGrupoResumenNum">${totalReferentes}</td>
+                  <td class="reportGrupoResumenNum">${totalPunteros}</td>
+                  <td class="reportGrupoResumenNum">${totalVotantes}</td>
+                </tr>
+              </tfoot>
+            </table>`
+
+      const totalSectionHtml = `
+          <div class="report-print-totalSection">
+            ${jerarquiaHeaderBlock(null)}
+            ${grupoResumenTableHtml}
+          </div>`
+
+      agentLog({
+        runId: 'post-fix',
+        hypothesisId: 'H_JERARQUIA_PRINT_BY_PUN',
+        location: 'src/pages/personas/index.tsx:buildJerarquiaReportHtml-byPuntero',
+        message: 'Built jerarquia report with one print section per puntero',
+        data: { sections: sections.length, totalReferentes, totalPunteros, totalVotantes },
+      })
+
+      return `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charSet="utf-8" />
+          <title>Reporte - Jerarquía Referentes / Punteros / Votantes</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #dbe3ea; }
+            .headerLeft { display: flex; flex-direction: column; }
+            h1 { font-size: 26px; margin: 0; letter-spacing: 0.01em; font-weight: 800; }
+            .meta { color: #475569; font-size: 12px; text-align: right; line-height: 1.4; }
+            .metaLine { margin-top: 4px; color: #64748b; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 9px 10px; text-align: left; vertical-align: middle; }
+            th { background: #f8fafc; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #334155; font-weight: 700; }
+            th:nth-child(1), td:nth-child(1) { width: 8%; }
+            th:nth-child(2), td:nth-child(2) { width: 10%; }
+            th:nth-child(3), td:nth-child(3) { width: 30%; }
+            th:nth-child(4), td:nth-child(4) { width: 12%; white-space: nowrap; }
+            th:nth-child(5), td:nth-child(5) { width: 14%; white-space: nowrap; }
+            th:nth-child(6), td:nth-child(6) { width: 18%; }
+            th:nth-child(7), td:nth-child(7) { width: 8%; white-space: nowrap; }
+            tr.reportRowGroup { background: #eaf1f8; font-weight: 850; }
+            tr.reportRowRef { background: #f5f8fc; font-weight: 720; }
+            tr.reportRowPun { background: #fcfdff; color: #1f2937; }
+            tr.reportRowVot { background: #ffffff; color: #334155; }
+            tr.reportRowVot td { font-size: 11.5px; }
+            tr.reportRowVot td.reportIndent3 { color: #475569; }
+            tr.reportRowEmpty { background: #fafbfc; color: #9ca3af; }
+            tr.reportRowEmpty td { font-size: 11.5px; }
+            tr.reportRowEmpty--punteros td,
+            tr.reportRowEmpty--votantes td { background: #fafbfc; color: #9ca3af; }
+            tr.reportSubTotalRow { background: #f8fafc; color: #1e293b; }
+            tr.reportSubTotalRow td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; padding-top: 10px; padding-bottom: 10px; }
+            tr.reportGrandTotalRow { background: #e8ecf1; color: #0f172a; }
+            tr.reportGrandTotalRow td { border-top: 2px solid #94a3b8; padding-top: 11px; padding-bottom: 11px; }
+            td.reportJerarquiaFootWide { white-space: nowrap; }
+            tr.reportBlankRow td { border: none; height: 10px; background: #fff; }
+            td.reportNumGroup { padding-left: 8px; }
+            td.reportNumRef { padding-left: 18px; }
+            td.reportNumPun { padding-left: 36px; }
+            td.reportNumVot { padding-left: 56px; }
+            td.reportNumEmpty { padding-left: 56px; color: #94a3b8; }
+            td.reportRolVot { padding-left: 24px; }
+            td.reportIndent1 { padding-left: 18px; }
+            td.reportIndent2 { padding-left: 36px; }
+            td.reportIndent3 { padding-left: 52px; }
+            .reportInlineSummary {
+              margin-top: 1px;
+              font-size: 9.75px;
+              color: #94a3b8;
+              font-weight: 400;
+              letter-spacing: 0.01em;
+              line-height: 1.35;
+            }
+            .reportInfoTag {
+              display: inline-block;
+              background: transparent;
+              border: 1px solid #eef1f4;
+              border-radius: 4px;
+              padding: 2px 8px;
+              color: #9ca3af;
+              font-size: 10px;
+              font-weight: 400;
+              line-height: 1.35;
+            }
+            tr.reportRowEmpty .reportInfoTag em {
+              font-style: normal;
+              font-weight: 500;
+              color: #94a3af;
+            }
+            tr.reportRowEmpty--referentes .reportInfoTag,
+            tr.reportRowEmpty--punteros .reportInfoTag,
+            tr.reportRowEmpty--votantes .reportInfoTag {
+              background: #f9fafb;
+              border-color: #eef0f3;
+              color: #9ca3af;
+            }
+            .reportJerarquiaFoot { display: inline; font-weight: inherit; }
+            .reportJerarquiaFootLabel {
+              font-weight: 800;
+              color: #0f172a;
+              letter-spacing: 0.01em;
+            }
+            .reportJerarquiaFootCounts {
+              font-weight: 600;
+              color: #475569;
+              letter-spacing: 0;
+            }
+            tr.reportGrandTotalRow .reportJerarquiaFootLabel { color: #0f172a; font-weight: 850; }
+            tr.reportGrandTotalRow .reportJerarquiaFootCounts { color: #334155; font-weight: 650; }
+            .reportEmptyValue { color: #94a3b8; font-size: 11px; }
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 8px;
+              border-radius: 999px;
+              font-size: 10px;
+              font-weight: 700;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--grupo { background: #e8f0ff; color: #1e40af; border-color: #c7d7fe; }
+            .roleBadge--referente { background: #e8f8ee; color: #166534; border-color: #c9edd8; font-weight: 700; }
+            .roleBadge--puntero { background: #fef7df; color: #a16207; border-color: #fce9b8; font-weight: 700; }
+            .roleBadge--votante { background: #f6f7f9; color: #334155; border-color: #e2e8f0; font-weight: 650; }
+            table.reportGrupoResumenTable {
+              margin-top: 8px;
+              margin-bottom: 2px;
+            }
+            table.reportGrupoResumenTable thead th {
+              text-transform: none;
+              letter-spacing: 0.02em;
+              font-size: 10.5px;
+              line-height: 1.3;
+              vertical-align: bottom;
+            }
+            table.reportGrupoResumenTable th.reportGrupoResumenThNum,
+            table.reportGrupoResumenTable td.reportGrupoResumenNum {
+              text-align: right;
+              font-variant-numeric: tabular-nums;
+            }
+            table.reportGrupoResumenTable th.reportGrupoResumenIdx,
+            table.reportGrupoResumenTable td.reportGrupoResumenIdx {
+              width: 6%;
+              text-align: center;
+              font-variant-numeric: tabular-nums;
+              color: #64748b;
+              font-weight: 600;
+            }
+            table.reportGrupoResumenTable th:nth-child(2),
+            table.reportGrupoResumenTable td:nth-child(2) { width: 34%; text-align: left; white-space: normal; }
+            table.reportGrupoResumenTable th:nth-child(3),
+            table.reportGrupoResumenTable td:nth-child(3),
+            table.reportGrupoResumenTable th:nth-child(4),
+            table.reportGrupoResumenTable td:nth-child(4),
+            table.reportGrupoResumenTable th:nth-child(5),
+            table.reportGrupoResumenTable td:nth-child(5) { width: 20%; }
+            table.reportGrupoResumenTable thead th:nth-child(3),
+            table.reportGrupoResumenTable thead th:nth-child(4),
+            table.reportGrupoResumenTable thead th:nth-child(5) { white-space: normal; }
+            table.reportGrupoResumenTable td.reportGrupoResumenNum {
+              color: #334155;
+              font-weight: 600;
+            }
+            table.reportGrupoResumenTable tbody td:nth-child(2) strong { font-weight: 800; color: #0f172a; }
+            table.reportGrupoResumenTable tfoot tr.reportGrupoResumenTotalRow td {
+              background: #e8ecf1;
+              color: #0f172a;
+              border-top: 2px solid #94a3b8;
+              padding-top: 11px;
+              padding-bottom: 11px;
+            }
+            table.reportGrupoResumenTable tfoot tr.reportGrupoResumenTotalRow td.reportGrupoResumenNum {
+              font-weight: 700;
+              color: #0f172a;
+            }
+            @media print {
+              .report-print-section { page-break-after: always; break-after: page; }
+              .report-print-section--lastBeforeTotal { page-break-after: auto; break-after: auto; }
+              .report-print-totalSection { page-break-before: always; break-before: page; }
+            }
+          </style>
+        </head>
+        <body>
+          ${sectionsBodyHtml}
+          ${totalSectionHtml}
+        </body>
+      </html>
+    `
+    }
+
     const rows: string[] = []
     let totalReferentes = 0
     let totalPunteros = 0
@@ -1621,7 +2180,7 @@ export default function PersonasPage(): React.JSX.Element {
                 <td colspan="5" class="reportJerarquiaFootWide">
                   <strong class="reportJerarquiaFoot">
                     <span class="reportJerarquiaFootLabel">Total general</span>
-                    <span class="reportJerarquiaFootCounts">: ${totalReferentes} referentes | ${totalPunteros} punteros | ${totalVotantes} votantes</span>
+                    <span class="reportJerarquiaFootCounts">: ${grupos.length} grupos | ${totalReferentes} referentes | ${totalPunteros} punteros | ${totalVotantes} votantes</span>
                   </strong>
                 </td>
               </tr>
@@ -1658,14 +2217,18 @@ export default function PersonasPage(): React.JSX.Element {
       data: { groupsCount: grupos.length },
     })
 
+    const emptyValue = '<span class="reportEmptyValue">-</span>'
     const rowsHtml = grupos
       .map(
         (g, idx) => `
-        <tr>
-          <td>${idx + 1}</td>
+        <tr class="reportRowGroup">
+          <td class="reportNumGroup">${idx + 1}</td>
+          <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
           <td><strong>${(g.Apellido || '').toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
           <td>${g.DNI}</td>
-          <td>${g.Telefono ?? '—'}</td>
+          <td>${g.Telefono && g.Telefono.trim().length > 0 ? g.Telefono : emptyValue}</td>
+          <td>${g.EscuelaNombre && g.EscuelaNombre.trim().length > 0 ? g.EscuelaNombre : emptyValue}</td>
+          <td>${g.NroMesa != null ? g.NroMesa : emptyValue}</td>
         </tr>`
       )
       .join('')
@@ -1678,15 +2241,41 @@ export default function PersonasPage(): React.JSX.Element {
           <title>Reporte - Listado de Grupos</title>
           <style>
             @page { size: A4 landscape; margin: 12mm; }
-            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
-            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #dbe3ea; }
             .headerLeft { display: flex; flex-direction: column; }
-            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
-            .meta { color: #555; font-size: 13px; }
-            .metaLine { margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-            th { background: #f3f4f6; }
+            h1 { font-size: 26px; margin: 0; letter-spacing: 0.01em; font-weight: 800; }
+            .meta { color: #475569; font-size: 12px; text-align: right; line-height: 1.4; }
+            .metaLine { margin-top: 4px; color: #64748b; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 9px 10px; text-align: left; vertical-align: middle; }
+            th { background: #f8fafc; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #334155; font-weight: 700; }
+            th:nth-child(1), td:nth-child(1) { width: 8%; }
+            th:nth-child(2), td:nth-child(2) { width: 10%; }
+            th:nth-child(3), td:nth-child(3) { width: 30%; }
+            th:nth-child(4), td:nth-child(4) { width: 12%; white-space: nowrap; }
+            th:nth-child(5), td:nth-child(5) { width: 14%; white-space: nowrap; }
+            th:nth-child(6), td:nth-child(6) { width: 18%; }
+            th:nth-child(7), td:nth-child(7) { width: 8%; white-space: nowrap; }
+            tr.reportRowGroup { background: #eaf1f8; font-weight: 850; }
+            td.reportNumGroup { padding-left: 8px; }
+            .reportEmptyValue { color: #94a3b8; font-size: 11px; }
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 8px;
+              border-radius: 999px;
+              font-size: 10px;
+              font-weight: 700;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--grupo { background: #e8f0ff; color: #1e40af; border-color: #c7d7fe; }
+            tr.reportBlankRow td { border: none; height: 10px; background: #fff; }
+            tr.reportGrandTotalRow { background: #e8ecf1; color: #0f172a; }
+            tr.reportGrandTotalRow td { border-top: 2px solid #94a3b8; padding-top: 11px; padding-bottom: 11px; }
           </style>
         </head>
         <body>
@@ -1703,13 +2292,22 @@ export default function PersonasPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Nº</th>
-                <th>Apellido/s y Nombre/s</th>
+                <th>Rol</th>
+                <th>Apellido y Nombre</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
+                <th>Escuela</th>
+                <th>Mesa</th>
               </tr>
             </thead>
             <tbody>
               ${rowsHtml}
+              <tr class="reportBlankRow"><td colspan="7"></td></tr>
+              <tr class="reportGrandTotalRow">
+                <td></td>
+                <td></td>
+                <td colspan="5"><strong>TOTAL GENERAL: ${grupos.length} grupos</strong></td>
+              </tr>
             </tbody>
           </table>
         </body>
@@ -1717,7 +2315,10 @@ export default function PersonasPage(): React.JSX.Element {
     `
   }
 
-  function buildPunterosPorGrupoReportHtml(data?: { grupos: PersonaResponseDTO[]; referentes: PersonaResponseDTO[]; punteros: PersonaResponseDTO[] }): string {
+  function buildPunterosPorGrupoReportHtml(
+    data?: { grupos: PersonaResponseDTO[]; referentes: PersonaResponseDTO[]; punteros: PersonaResponseDTO[] },
+    options?: { printLayout?: 'all' | 'byReferente' }
+  ): string {
     const now = new Date()
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
 
@@ -1752,6 +2353,258 @@ export default function PersonasPage(): React.JSX.Element {
     punterosByReferente.forEach((arr) => arr.sort(sortByApellidoNombre))
 
     const emptyValue = '<span class="reportEmptyValue">-</span>'
+
+    const colgroupPunterosReport = `
+            <colgroup>
+              <col style="width:6%">
+              <col style="width:8%">
+              <col style="width:32%">
+              <col style="width:11%">
+              <col style="width:14%">
+              <col style="width:20%">
+              <col style="width:9%">
+            </colgroup>`
+
+    const theadPunterosReport = `
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Rol</th>
+                <th>Apellido y Nombre</th>
+                <th>DNI</th>
+                <th>Teléfono</th>
+                <th>Escuela</th>
+                <th>Mesa</th>
+              </tr>
+            </thead>`
+
+    const punterosReportHeaderHtml = (grupoMetaLine: string | null) => `
+          <div class="header">
+            <h1>LISTADO DE PUNTEROS (POR GRUPO)</h1>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              ${
+                grupoMetaLine != null && grupoMetaLine.length > 0
+                  ? `<div class="metaLine">Grupo: ${grupoMetaLine}</div>`
+                  : ''
+              }
+            </div>
+          </div>`
+
+    if (options?.printLayout === 'byReferente') {
+      type PunteroSection = { grupoMeta: string; tbody: string }
+      const sections: PunteroSection[] = []
+      let totalReferentes = 0
+      let totalPunteros = 0
+
+      grupos.forEach((g) => {
+        const grupoMeta = `${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}`
+        const refs = referentesByGrupo.get(g.Id) ?? []
+        if (refs.length === 0) {
+          sections.push({
+            grupoMeta,
+            tbody: `
+        <tr class="reportGroupTopRow">
+          <td class="reportNumGroup">1</td>
+          <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
+          <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
+          <td>${g.DNI}</td>
+          <td>${emptyValue}</td>
+          <td>${emptyValue}</td>
+          <td>${emptyValue}</td>
+        </tr>
+        <tr class="reportInfoRow">
+          <td></td>
+          <td></td>
+          <td class="reportIndent1"><span class="reportInfoTag"><em>Sin referentes asignados</em></span></td>
+          <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
+        </tr>`,
+          })
+        } else {
+          refs.forEach((ref) => {
+            totalReferentes += 1
+            const punteros = punterosByReferente.get(ref.Id) ?? []
+            totalPunteros += punteros.length
+            const block: string[] = []
+            block.push(`
+        <tr class="reportGroupTopRow">
+          <td class="reportNumGroup">1</td>
+          <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
+          <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
+          <td>${g.DNI}</td>
+          <td>${emptyValue}</td>
+          <td>${emptyValue}</td>
+          <td>${emptyValue}</td>
+        </tr>`)
+            block.push(`
+        <tr class="reportLeaderRow reportRefStartRow">
+          <td class="reportNumRef">1.1</td>
+          <td><span class="roleBadge roleBadge--referente">Referente</span></td>
+          <td class="reportIndent1"><strong>${ref.Apellido.toUpperCase()}${ref.Nombre ? `, ${ref.Nombre}` : ''}</strong></td>
+          <td>${ref.DNI}</td>
+          <td>${ref.Telefono ?? emptyValue}</td>
+          <td>${ref.EscuelaNombre ?? emptyValue}</td>
+          <td>${ref.NroMesa ?? emptyValue}</td>
+        </tr>`)
+            if (punteros.length === 0) {
+              block.push(`
+        <tr class="reportInfoRow reportInfoRow--punteros">
+          <td class="reportNumPun"></td>
+          <td class="reportRolPuntero"></td>
+          <td class="reportIndent3"><span class="reportInfoTag"><em>Sin punteros asignados</em></span></td>
+          <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
+        </tr>`)
+            } else {
+              punteros.forEach((p, pi) => {
+                block.push(`
+        <tr class="reportSubRow">
+          <td class="reportNumPun">1.1.${pi + 1}</td>
+          <td class="reportRolPuntero"><span class="roleBadge roleBadge--puntero">Puntero</span></td>
+          <td class="reportIndent3">${p.Apellido}, ${p.Nombre}</td>
+          <td>${p.DNI}</td>
+          <td>${p.Telefono ?? emptyValue}</td>
+          <td>${p.EscuelaNombre ?? emptyValue}</td>
+          <td>${p.NroMesa ?? emptyValue}</td>
+        </tr>`)
+              })
+            }
+            sections.push({ grupoMeta, tbody: block.join('') })
+          })
+        }
+      })
+
+      const lastSectionIdx = sections.length - 1
+      const sectionsBodyHtml = sections
+        .map((s, i) => {
+          const sectionClass =
+            i === lastSectionIdx ? 'report-print-section report-print-section--lastBeforeTotal' : 'report-print-section'
+          return `
+          <div class="${sectionClass}">
+            ${punterosReportHeaderHtml(s.grupoMeta)}
+            <table>
+            ${colgroupPunterosReport}
+            ${theadPunterosReport}
+            <tbody>
+              ${s.tbody}
+            </tbody>
+          </table>
+          </div>`
+        })
+        .join('')
+
+      const totalSectionHtml = `
+          <div class="report-print-totalSection">
+            ${punterosReportHeaderHtml(null)}
+            <table class="report-print-totalTable">
+            ${colgroupPunterosReport}
+            <tbody>
+              <tr class="reportBlankRow"><td colspan="7"></td></tr>
+              <tr class="reportGrandTotalRow">
+                <td colspan="7"><strong>TOTAL GENERAL: ${grupos.length} grupos | ${totalReferentes} referentes | ${totalPunteros} punteros</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          </div>`
+
+      agentLog({
+        runId: 'post-fix',
+        hypothesisId: 'H_PUNTEROS_PRINT_BY_REF',
+        location: 'src/pages/personas/index.tsx:buildPunterosPorGrupoReportHtml-byReferente',
+        message: 'Built punteros report with one print section per referente',
+        data: { sections: sections.length, totalReferentes, totalPunteros },
+      })
+
+      return `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charSet="utf-8" />
+          <title>Reporte - Listado de punteros (por grupo)</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #dbe3ea; }
+            h1 { font-size: 26px; margin: 0; letter-spacing: 0.01em; font-weight: 800; }
+            .meta { color: #475569; font-size: 12px; text-align: right; line-height: 1.4; }
+            .metaLine { margin-top: 4px; color: #64748b; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 9px 10px; text-align: left; vertical-align: middle; }
+            th { background: #f8fafc; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #334155; font-weight: 700; }
+            th:nth-child(1), td:nth-child(1) { width: 6%; }
+            th:nth-child(2), td:nth-child(2) { width: 8%; }
+            th:nth-child(3), td:nth-child(3) { width: 32%; }
+            th:nth-child(4), td:nth-child(4) { width: 11%; white-space: nowrap; }
+            th:nth-child(5), td:nth-child(5) { width: 14%; white-space: nowrap; }
+            th:nth-child(6), td:nth-child(6) { width: 20%; }
+            th:nth-child(7), td:nth-child(7) { width: 9%; white-space: nowrap; }
+            tr.reportGroupTopRow { background: #eaf1f8; font-weight: 800; }
+            tr.reportLeaderRow { background: #f5f8fc; font-weight: 700; }
+            tr.reportRefStartRow td { border-top: 1px solid #dbe5ef; }
+            tr.reportSubRow { background: #fff; }
+            tr.reportSubRow:nth-child(odd) { background: #fcfdff; }
+            tr.reportInfoRow { background: #f8fafc; color: #64748b; }
+            tr.reportInfoRow td { padding-top: 6px; padding-bottom: 6px; }
+            tr.reportInfoRow--punteros td { background: #f8fafc; color: #475569; font-style: italic; }
+            tr.reportInfoRow td:nth-child(4),
+            tr.reportInfoRow td:nth-child(5),
+            tr.reportInfoRow td:nth-child(6),
+            tr.reportInfoRow td:nth-child(7) { color: #cbd5e1; }
+            .reportInfoTag {
+              display: inline-block;
+              background: #f1f5f9;
+              border: 1px solid #e2e8f0;
+              border-radius: 999px;
+              padding: 2px 10px;
+              color: #475569;
+              font-size: 11px;
+              line-height: 1.2;
+            }
+            tr.reportSubTotalRow { background: #f8fafc; font-weight: 800; color: #1f2937; }
+            tr.reportSubTotalRow td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; }
+            tr.reportGrandTotalRow { background: #e2e8f0; font-weight: 900; }
+            tr.reportGrandTotalRow td { border-top: 2px solid #94a3b8; }
+            tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
+            td.reportRolPuntero { padding-left: 24px; }
+            td.reportIndent1 { padding-left: 18px; }
+            td.reportIndent2 { padding-left: 36px; }
+            td.reportIndent3 { padding-left: 52px; }
+            td.reportNumGroup { padding-left: 8px; }
+            td.reportNumRef { padding-left: 18px; }
+            td.reportNumPun { padding-left: 52px; color: #64748b; }
+            tr.reportReferenteSpacer td { height: 8px; border: none; background: #fff; }
+            tr.reportGroupSpacer td { height: 14px; border: none; background: #fff; }
+            .reportEmptyValue { color: #94a3b8; font-size: 11px; }
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 8px;
+              border-radius: 999px;
+              font-size: 10px;
+              font-weight: 700;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--grupo { background: #e8f0ff; color: #1e40af; border-color: #c7d7fe; }
+            .roleBadge--referente { background: #e8f8ee; color: #166534; border-color: #c9edd8; font-weight: 700; }
+            .roleBadge--puntero { background: #fef7df; color: #a16207; border-color: #fce9b8; font-weight: 700; }
+            .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
+            @media print {
+              .report-print-section { page-break-after: always; break-after: page; }
+              .report-print-section--lastBeforeTotal { page-break-after: auto; break-after: auto; }
+              .report-print-totalSection { page-break-before: always; break-before: page; }
+            }
+          </style>
+        </head>
+        <body>
+          ${sectionsBodyHtml}
+          ${totalSectionHtml}
+        </body>
+      </html>
+    `
+    }
+
     const rows: string[] = []
     let totalReferentes = 0
     let totalPunteros = 0
@@ -1951,45 +2804,23 @@ export default function PersonasPage(): React.JSX.Element {
             .roleBadge--referente { background: #e8f8ee; color: #166534; border-color: #c9edd8; font-weight: 700; }
             .roleBadge--puntero { background: #fef7df; color: #a16207; border-color: #fce9b8; font-weight: 700; }
             .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
+            @media print {
+              .report-print-section { page-break-after: always; break-after: page; }
+              .report-print-section--lastBeforeTotal { page-break-after: auto; break-after: auto; }
+              .report-print-totalSection { page-break-before: always; break-before: page; }
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>LISTADO DE PUNTEROS (POR GRUPO)</h1>
-            <div class="meta">
-              <div>Fecha: ${formattedDate}</div>
-              <div class="metaLine">Grupo: Varios</div>
-            </div>
-          </div>
+          ${punterosReportHeaderHtml('Varios')}
           <table>
-            <colgroup>
-              <col style="width:6%">
-              <col style="width:8%">
-              <col style="width:32%">
-              <col style="width:11%">
-              <col style="width:14%">
-              <col style="width:20%">
-              <col style="width:9%">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Nº</th>
-                <th>Rol</th>
-                <th>Apellido y Nombre</th>
-                <th>DNI</th>
-                <th>Teléfono</th>
-                <th>Escuela</th>
-                <th>Mesa</th>
-              </tr>
-            </thead>
+            ${colgroupPunterosReport}
+            ${theadPunterosReport}
             <tbody>
               ${rows.join('')}
               <tr class="reportBlankRow"><td colspan="7"></td></tr>
               <tr class="reportGrandTotalRow">
-                <td></td>
-                <td></td>
-                <td><strong>TOTAL GENERAL: ${totalReferentes} referentes | ${totalPunteros} punteros</strong></td>
-                <td></td><td></td><td></td><td></td>
+                <td colspan="7"><strong>TOTAL GENERAL: ${grupos.length} grupos | ${totalReferentes} referentes | ${totalPunteros} punteros</strong></td>
               </tr>
             </tbody>
           </table>
@@ -2083,21 +2914,41 @@ export default function PersonasPage(): React.JSX.Element {
     const grupo = grupoId != null ? reportesGrupos.find((g) => g.Id === grupoId) ?? null : null
     const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : 'Todos'
 
-    if (grupoId != null && referenteId == null && punteroId == null) {
-      return { mode: 'grupo', headerPathLine: `Grupo: ${grupoDisplay}` }
-    }
-
     const ref = referenteId != null ? reportesReferentes.find((r) => r.Id === referenteId) ?? null : null
     const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : 'Todos'
 
-    if (grupoId != null && referenteId != null && punteroId == null) {
-      return { mode: 'referente', headerPathLine: `Grupo: ${grupoDisplay} -> Referente: ${referenteDisplay}` }
-    }
+    const grupoFromRef =
+      ref?.LiderId != null ? reportesGrupos.find((g) => g.Id === ref.LiderId) ?? null : null
+    const grupoLineForRef = grupoId != null ? grupoDisplay : grupoFromRef ? `${grupoFromRef.Apellido}, ${grupoFromRef.Nombre}` : 'Todos'
 
     const pun = punteroId != null ? reportesPunteros.find((p) => p.Id === punteroId) ?? null : null
     const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : 'Todos'
 
-    return { mode: 'puntero', headerPathLine: `Grupo: ${grupoDisplay} -> Referente: ${referenteDisplay} -> Puntero: ${punteroDisplay}` }
+    if (punteroId != null) {
+      const refFromPun =
+        pun?.LiderId != null ? reportesReferentes.find((r) => r.Id === pun.LiderId) ?? null : null
+      const gFromPun =
+        refFromPun?.LiderId != null ? reportesGrupos.find((g) => g.Id === refFromPun.LiderId) ?? null : null
+      const gDisp = gFromPun ? `${gFromPun.Apellido}, ${gFromPun.Nombre}` : 'Todos'
+      const rDisp = refFromPun ? `${refFromPun.Apellido}, ${refFromPun.Nombre}` : 'Todos'
+      return {
+        mode: 'puntero',
+        headerPathLine: `Grupo: ${gDisp} -> Referente: ${rDisp} -> Puntero: ${punteroDisplay}`,
+      }
+    }
+
+    if (referenteId != null && punteroId == null) {
+      return {
+        mode: 'referente',
+        headerPathLine: `Grupo: ${grupoLineForRef} -> Referente: ${referenteDisplay}`,
+      }
+    }
+
+    if (grupoId != null && referenteId == null && punteroId == null) {
+      return { mode: 'grupo', headerPathLine: `Grupo: ${grupoDisplay}` }
+    }
+
+    return { mode: 'todos', headerPathLine: 'Grupo: Todos' }
   }
 
   function viewReportesPorSeleccion() {
@@ -2119,10 +2970,15 @@ export default function PersonasPage(): React.JSX.Element {
       return
     }
     if (mode === 'referente') {
+      if (reportesReferenteId == null) return
       openReportWindow(buildPunterosYVotosDeReferenteHtml({ headerPathLine }))
       return
     }
-    viewVotantesDePuntero()
+    if (mode === 'puntero') {
+      if (reportesPunteroId == null) return
+      viewVotantesDePuntero()
+      return
+    }
   }
 
   function printReportesPorSeleccion() {
@@ -2150,6 +3006,7 @@ export default function PersonasPage(): React.JSX.Element {
       return
     }
     if (mode === 'referente') {
+      if (reportesReferenteId == null) return
       const w = window.open('', '_blank')
       if (!w) return
       w.document.open()
@@ -2159,7 +3016,288 @@ export default function PersonasPage(): React.JSX.Element {
       w.print()
       return
     }
-    printVotantesDePuntero()
+    if (mode === 'puntero') {
+      if (reportesPunteroId == null) return
+      printVotantesDePuntero()
+    }
+  }
+
+  function escapeCsvField(value: string): string {
+    const t = String(value ?? '').replace(/"/g, '""')
+    if (/[",\n\r]/.test(t)) return `"${t}"`
+    return t
+  }
+
+  function downloadUtf8Csv(filename: string, headerRow: string[], dataRows: (string | number)[][]) {
+    const lines = [
+      headerRow.map(escapeCsvField).join(','),
+      ...dataRows.map((row) => row.map((c) => escapeCsvField(String(c))).join(',')),
+    ]
+    const blob = new Blob([`\uFEFF${lines.join('\r\n')}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function sortPersonasApellidoNombre(a: PersonaResponseDTO, b: PersonaResponseDTO): number {
+    const ap = (a.Apellido || '').toLowerCase()
+    const bp = (b.Apellido || '').toLowerCase()
+    if (ap < bp) return -1
+    if (ap > bp) return 1
+    const an = (a.Nombre || '').toLowerCase()
+    const bn = (b.Nombre || '').toLowerCase()
+    if (an < bn) return -1
+    if (an > bn) return 1
+    return 0
+  }
+
+  function exportTabReferentesExcel() {
+    fetchReportesData()
+      .then(({ grupos, referentes }) => {
+        const leaderById = new Map(grupos.map((g) => [g.Id, g]))
+        const sorted = [...referentes].sort(sortPersonasApellidoNombre)
+        const stamp = new Date().toISOString().slice(0, 10)
+        downloadUtf8Csv(
+          `referentes_${stamp}.csv`,
+          ['Grupo', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+          sorted.map((r) => {
+            const g = r.LiderId != null ? leaderById.get(r.LiderId) : undefined
+            const gname = g ? `${g.Apellido}, ${g.Nombre}` : ''
+            return [gname, r.Apellido, r.Nombre, r.DNI, r.Telefono ?? '', r.EscuelaNombre ?? '', r.NroMesa ?? '']
+          })
+        )
+      })
+      .catch(() => window.alert('No se pudo generar el archivo.'))
+  }
+
+  function exportTabPunterosExcel() {
+    fetchReportesData()
+      .then(({ grupos, referentes, punteros }) => {
+        const gById = new Map(grupos.map((g) => [g.Id, g]))
+        const rById = new Map(referentes.map((r) => [r.Id, r]))
+        const sorted = [...punteros].sort(sortPersonasApellidoNombre)
+        const stamp = new Date().toISOString().slice(0, 10)
+        downloadUtf8Csv(
+          `punteros_${stamp}.csv`,
+          ['Grupo', 'Referente', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+          sorted.map((pun) => {
+            const ref = pun.LiderId != null ? rById.get(pun.LiderId) : undefined
+            const g = ref?.LiderId != null ? gById.get(ref.LiderId) : undefined
+            return [
+              g ? `${g.Apellido}, ${g.Nombre}` : '',
+              ref ? `${ref.Apellido}, ${ref.Nombre}` : '',
+              pun.Apellido,
+              pun.Nombre,
+              pun.DNI,
+              pun.Telefono ?? '',
+              pun.EscuelaNombre ?? '',
+              pun.NroMesa ?? '',
+            ]
+          })
+        )
+      })
+      .catch(() => window.alert('No se pudo generar el archivo.'))
+  }
+
+  function exportTabVotantesExcel() {
+    fetchReportesData()
+      .then(({ grupos, referentes, punteros, votantes }) => {
+        const gById = new Map(grupos.map((g) => [g.Id, g]))
+        const rById = new Map(referentes.map((r) => [r.Id, r]))
+        const pById = new Map(punteros.map((p) => [p.Id, p]))
+        const sorted = [...votantes].sort(sortPersonasApellidoNombre)
+        const stamp = new Date().toISOString().slice(0, 10)
+        downloadUtf8Csv(
+          `votantes_${stamp}.csv`,
+          ['Grupo', 'Referente', 'Puntero', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+          sorted.map((v) => {
+            const pun = v.LiderId != null ? pById.get(v.LiderId) : undefined
+            const ref = pun?.LiderId != null ? rById.get(pun.LiderId) : undefined
+            const g = ref?.LiderId != null ? gById.get(ref.LiderId) : undefined
+            return [
+              g ? `${g.Apellido}, ${g.Nombre}` : '',
+              ref ? `${ref.Apellido}, ${ref.Nombre}` : '',
+              pun ? `${pun.Apellido}, ${pun.Nombre}` : '',
+              v.Apellido,
+              v.Nombre,
+              v.DNI,
+              v.Telefono ?? '',
+              v.EscuelaNombre ?? '',
+              v.NroMesa ?? '',
+            ]
+          })
+        )
+      })
+      .catch(() => window.alert('No se pudo generar el archivo.'))
+  }
+
+  function exportCantidadesTotalesExcel() {
+    const grupoById = new Map(reportesGrupos.map((g) => [g.Id, g]))
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadUtf8Csv(
+      `cantidades_totales_referente_${stamp}.csv`,
+      ['Grupo', 'Referente', 'Punteros', 'Votantes', 'Total (Punteros + Votantes)'],
+      cantidadesTotalesRows.map((row) => {
+        const ref = reportesReferentes.find((x) => x.Id === row.refId)
+        const g = ref?.LiderId != null ? grupoById.get(ref.LiderId) : undefined
+        const gname = g ? `${g.Apellido}, ${g.Nombre}` : ''
+        const total = row.punteros + row.votos
+        return [gname, `${row.refApellido}, ${row.refNombre}`, row.punteros, row.votos, total]
+      })
+    )
+  }
+
+  function roleLabelForCsv(rol: PersonRole): string {
+    if (rol === 1) return 'Grupo'
+    if (rol === 2) return 'Referente'
+    if (rol === 3) return 'Puntero'
+    if (rol === 4) return 'Votante'
+    return 'Persona'
+  }
+
+  function exportPersonasEscuelaMesaExcel() {
+    const stamp = new Date().toISOString().slice(0, 10)
+    const sorted = [...reportesPersonasByEscuelaMesa].sort(sortPersonasApellidoNombre)
+    downloadUtf8Csv(
+      `personas_escuela_mesa_${stamp}.csv`,
+      ['Rol', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+      sorted.map((p) => [
+        roleLabelForCsv(p.Rol),
+        p.Apellido,
+        p.Nombre,
+        p.DNI,
+        p.Telefono ?? '',
+        p.EscuelaNombre ?? '',
+        p.NroMesa ?? '',
+      ])
+    )
+  }
+
+  function exportReportesEstructuraExcel() {
+    const { mode } = getReportesSeleccionModeAndHeaderLine()
+    const stamp = new Date().toISOString().slice(0, 10)
+    const gById = new Map(reportesGrupos.map((x) => [x.Id, x]))
+    const rById = new Map(reportesReferentes.map((x) => [x.Id, x]))
+    const pById = new Map(reportesPunteros.map((x) => [x.Id, x]))
+
+    if (mode === 'todos') {
+      const sorted = [...reportesGruposSorted].sort(sortPersonasApellidoNombre)
+      downloadUtf8Csv(
+        `grupos_${stamp}.csv`,
+        ['Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        sorted.map((g) => [g.Apellido, g.Nombre, g.DNI, g.Telefono ?? '', g.EscuelaNombre ?? '', g.NroMesa ?? ''])
+      )
+      return
+    }
+
+    if (mode === 'grupo' && reportesGrupoId != null) {
+      const refs = reportesReferentesSorted.filter((r) => r.LiderId === reportesGrupoId).sort(sortPersonasApellidoNombre)
+      downloadUtf8Csv(
+        `referentes_grupo_${stamp}.csv`,
+        ['Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        refs.map((r) => [r.Apellido, r.Nombre, r.DNI, r.Telefono ?? '', r.EscuelaNombre ?? '', r.NroMesa ?? ''])
+      )
+      return
+    }
+
+    if (mode === 'referente' && reportesReferenteId != null) {
+      const ref = reportesReferentes.find((r) => r.Id === reportesReferenteId)
+      const g = ref?.LiderId != null ? gById.get(ref.LiderId) : undefined
+      const gname = g ? `${g.Apellido}, ${g.Nombre}` : ''
+      const rname = ref ? `${ref.Apellido}, ${ref.Nombre}` : ''
+      const punteros = [...reportesPunterosDeReferenteSorted].sort(sortPersonasApellidoNombre)
+      const punIds = new Set(punteros.map((p) => p.Id))
+      const votantes = reportesVotantes.filter((v) => v.LiderId != null && punIds.has(v.LiderId)).sort(sortPersonasApellidoNombre)
+      const rows: (string | number)[][] = []
+      punteros.forEach((pun) => {
+        rows.push([gname, rname, 'Puntero', `${pun.Apellido}, ${pun.Nombre}`, pun.DNI, pun.Telefono ?? '', pun.EscuelaNombre ?? '', pun.NroMesa ?? ''])
+      })
+      votantes.forEach((v) => {
+        const pun = v.LiderId != null ? pById.get(v.LiderId) : undefined
+        const plabel = pun ? `${pun.Apellido}, ${pun.Nombre}` : ''
+        rows.push([gname, rname, `Votante (puntero: ${plabel})`, `${v.Apellido}, ${v.Nombre}`, v.DNI, v.Telefono ?? '', v.EscuelaNombre ?? '', v.NroMesa ?? ''])
+      })
+      downloadUtf8Csv(
+        `punteros_y_votantes_referente_${stamp}.csv`,
+        ['Grupo', 'Referente', 'Tipo / Puntero', 'Apellido y nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        rows
+      )
+      return
+    }
+
+    if (mode === 'puntero' && reportesPunteroId != null) {
+      const pun = reportesPunteros.find((p) => p.Id === reportesPunteroId)
+      const ref = pun?.LiderId != null ? rById.get(pun.LiderId) : undefined
+      const g = ref?.LiderId != null ? gById.get(ref.LiderId) : undefined
+      const gname = g ? `${g.Apellido}, ${g.Nombre}` : ''
+      const rname = ref ? `${ref.Apellido}, ${ref.Nombre}` : ''
+      const punlabel = pun ? `${pun.Apellido}, ${pun.Nombre}` : ''
+      const votantes = [...reportesVotantesDePuntero].sort(sortPersonasApellidoNombre)
+      downloadUtf8Csv(
+        `votantes_puntero_${stamp}.csv`,
+        ['Grupo', 'Referente', 'Puntero', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        votantes.map((v) => [gname, rname, punlabel, v.Apellido, v.Nombre, v.DNI, v.Telefono ?? '', v.EscuelaNombre ?? '', v.NroMesa ?? ''])
+      )
+    }
+  }
+
+  function handleDownloadModalPdf() {
+    const t = downloadModalTarget
+    if (t == null) return
+    setDownloadModalTarget(null)
+    window.setTimeout(() => {
+      if (t.kind === 'tab') {
+        if (t.rol === 2) executeReferentesPrint('all')
+        else if (t.rol === 3) executePunterosPrint('all')
+        else executeVotantesPrint('all')
+        return
+      }
+      if (t.report === 'cantidades') printCantidadesTotalesReport()
+      else if (t.report === 'escuelaMesa') printPersonasPorEscuelaMesaReport()
+      else printReportesPorSeleccion()
+    }, 0)
+  }
+
+  function handleDownloadModalExcel() {
+    const t = downloadModalTarget
+    if (t == null) return
+    setDownloadModalTarget(null)
+    window.setTimeout(() => {
+      if (t.kind === 'tab') {
+        if (t.rol === 2) exportTabReferentesExcel()
+        else if (t.rol === 3) exportTabPunterosExcel()
+        else exportTabVotantesExcel()
+        return
+      }
+      if (t.report === 'cantidades') exportCantidadesTotalesExcel()
+      else if (t.report === 'escuelaMesa') exportPersonasEscuelaMesaExcel()
+      else exportReportesEstructuraExcel()
+    }, 0)
+  }
+
+  function openTabDownloadModal() {
+    if (tab.isReportes || tab.id === 'configuracion' || tab.id === 'inicio') return
+    if (filteredList.length === 0) {
+      window.alert('No hay datos para exportar.')
+      return
+    }
+    if (tab.rol === 2) setDownloadModalTarget({ kind: 'tab', rol: 2 })
+    else if (tab.rol === 3) setDownloadModalTarget({ kind: 'tab', rol: 3 })
+    else if (tab.rol === 4) setDownloadModalTarget({ kind: 'tab', rol: 4 })
+  }
+
+  function getDownloadModalTitle(t: PersonasDownloadModalTarget): string {
+    if (t.kind === 'tab') {
+      if (t.rol === 2) return 'Descargar listado de referentes'
+      if (t.rol === 3) return 'Descargar listado de punteros'
+      return 'Descargar listado de votantes'
+    }
+    if (t.report === 'cantidades') return 'Descargar cantidades totales (por referente)'
+    if (t.report === 'escuelaMesa') return 'Descargar reporte por escuela y mesa'
+    return 'Descargar reporte por estructura'
   }
 
   function buildPersonasPorEscuelaMesaReportHtml(): string {
@@ -2424,9 +3562,8 @@ export default function PersonasPage(): React.JSX.Element {
       votantesCountByPuntero.set(pid, (votantesCountByPuntero.get(pid) ?? 0) + 1)
     })
 
-    let globalIndex = 0
     const rows: string[] = []
-    const groupSummaries: Array<{ grupoId: number; punteros: number; votantes: number }> = []
+    const groupSummaries: Array<{ grupoId: number; referentes: number; punteros: number; votantes: number }> = []
 
     grupos.forEach((g, gi) => {
       const refs = refsByGrupo.get(g.Id) ?? []
@@ -2434,9 +3571,10 @@ export default function PersonasPage(): React.JSX.Element {
         <tr class="reportGroupTopRow">
           <td>${gi + 1}</td>
           <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
-          <td style="text-align:right;">—</td>
-          <td style="text-align:right;">—</td>
-          <td style="text-align:right;">—</td>
+          <td class="reportCantNum">—</td>
+          <td class="reportCantNum">—</td>
+          <td class="reportCantNum">—</td>
+          <td class="reportCantNum">—</td>
         </tr>`)
 
       if (refs.length === 0) {
@@ -2444,49 +3582,69 @@ export default function PersonasPage(): React.JSX.Element {
           <tr class="reportEmptyRow">
             <td></td>
             <td class="reportIndent1"><em>Sin referentes</em></td>
-            <td style="text-align:right;">0</td>
-            <td style="text-align:right;">0</td>
-            <td style="text-align:right;">0</td>
+            <td class="reportCantNum">0</td>
+            <td class="reportCantNum">0</td>
+            <td class="reportCantNum">0</td>
+            <td class="reportCantNum">0</td>
           </tr>`)
-        groupSummaries.push({ grupoId: g.Id, punteros: 0, votantes: 0 })
+        groupSummaries.push({ grupoId: g.Id, referentes: 0, punteros: 0, votantes: 0 })
+        rows.push(`
+        <tr class="reportSubTotalRow">
+          <td></td>
+          <td><strong>Subtotal ${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
+          <td class="reportCantNum"><strong>0</strong></td>
+          <td class="reportCantNum"><strong>0</strong></td>
+          <td class="reportCantNum"><strong>0</strong></td>
+          <td class="reportCantNum"><strong>0</strong></td>
+        </tr>`)
+        if (gi < grupos.length - 1) {
+          rows.push('<tr class="reportGroupSpacer"><td colspan="6"></td></tr>')
+        }
         return
       }
 
       let groupPunteros = 0
       let groupVotantes = 0
-      refs.forEach((ref) => {
-        globalIndex += 1
+      refs.forEach((ref, ri) => {
         const punteros = punterosByReferente.get(ref.Id) ?? []
         const votos = punteros.reduce((acc, pun) => acc + (votantesCountByPuntero.get(pun.Id) ?? 0), 0)
         groupPunteros += punteros.length
         groupVotantes += votos
         rows.push(`
           <tr>
-            <td>${gi + 1}.${globalIndex}</td>
+            <td>${gi + 1}.${ri + 1}</td>
             <td class="reportIndent1">${ref.Apellido}, ${ref.Nombre}</td>
-            <td style="text-align:right;">${punteros.length}</td>
-            <td style="text-align:right;">${votos}</td>
-            <td style="text-align:right;">${punteros.length + votos}</td>
+            <td class="reportCantNum">1</td>
+            <td class="reportCantNum">${punteros.length}</td>
+            <td class="reportCantNum">${votos}</td>
+            <td class="reportCantNum">${punteros.length + votos}</td>
           </tr>`)
       })
 
-      groupSummaries.push({ grupoId: g.Id, punteros: groupPunteros, votantes: groupVotantes })
+      groupSummaries.push({
+        grupoId: g.Id,
+        referentes: refs.length,
+        punteros: groupPunteros,
+        votantes: groupVotantes,
+      })
       rows.push(`
         <tr class="reportSubTotalRow">
           <td></td>
           <td><strong>Subtotal ${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
-          <td style="text-align:right;"><strong>${groupPunteros}</strong></td>
-          <td style="text-align:right;"><strong>${groupVotantes}</strong></td>
-          <td style="text-align:right;"><strong>${groupPunteros + groupVotantes}</strong></td>
+          <td class="reportCantNum"><strong>${refs.length}</strong></td>
+          <td class="reportCantNum"><strong>${groupPunteros}</strong></td>
+          <td class="reportCantNum"><strong>${groupVotantes}</strong></td>
+          <td class="reportCantNum"><strong>${groupPunteros + groupVotantes}</strong></td>
         </tr>`)
 
       if (gi < grupos.length - 1) {
-        rows.push('<tr class="reportGroupSpacer"><td colspan="5"></td></tr>')
+        rows.push('<tr class="reportGroupSpacer"><td colspan="6"></td></tr>')
       }
     })
 
     const rowsHtml = rows.join('')
 
+    const totalReferentes = cantidadesTotalesRows.length
     const totalPunteros = cantidadesTotalesRows.reduce((a, r) => a + r.punteros, 0)
     const totalVotos = cantidadesTotalesRows.reduce((a, r) => a + r.votos, 0)
     const totalGeneral = totalPunteros + totalVotos
@@ -2496,7 +3654,7 @@ export default function PersonasPage(): React.JSX.Element {
       hypothesisId: 'H3',
       location: 'src/pages/personas/index.tsx:build-cantidades-totales-html',
       message: 'Building cantidades totales HTML',
-      data: { rows: cantidadesTotalesRows.length, totalPunteros, totalVotos, totalGeneral },
+      data: { rows: cantidadesTotalesRows.length, totalReferentes, totalPunteros, totalVotos, totalGeneral },
     })
     agentLog({
       runId: 'pre-fix',
@@ -2522,6 +3680,7 @@ export default function PersonasPage(): React.JSX.Element {
             table { width: 100%; border-collapse: collapse; font-size: 12px; }
             th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
             th { background: #f3f4f6; }
+            th.reportCantNum, td.reportCantNum { text-align: right; font-variant-numeric: tabular-nums; }
             tfoot td { background: #e5e7eb; font-weight: 700; }
             tr.reportGroupTopRow { background: #dbeafe; font-weight: 900; }
             tr.reportSubTotalRow { background: #f3f4f6; font-weight: 700; }
@@ -2543,9 +3702,10 @@ export default function PersonasPage(): React.JSX.Element {
               <tr>
                 <th>Nº</th>
                 <th>Apellido/s y Nombre/s</th>
-                <th style="text-align:right;">Punteros</th>
-                <th style="text-align:right;">Votantes</th>
-                <th style="text-align:right;">Total de votos (Punteros + Votantes)</th>
+                <th class="reportCantNum">Referentes</th>
+                <th class="reportCantNum">Punteros</th>
+                <th class="reportCantNum">Votantes</th>
+                <th class="reportCantNum">Total de votos (Punteros + Votantes)</th>
               </tr>
             </thead>
             <tbody>
@@ -2554,9 +3714,10 @@ export default function PersonasPage(): React.JSX.Element {
             <tfoot>
               <tr>
                 <td colspan="2">Totales</td>
-                <td style="text-align:right;">${totalPunteros}</td>
-                <td style="text-align:right;">${totalVotos}</td>
-                <td style="text-align:right;">${totalGeneral}</td>
+                <td class="reportCantNum">${totalReferentes}</td>
+                <td class="reportCantNum">${totalPunteros}</td>
+                <td class="reportCantNum">${totalVotos}</td>
+                <td class="reportCantNum">${totalGeneral}</td>
               </tr>
             </tfoot>
           </table>
@@ -2594,33 +3755,87 @@ export default function PersonasPage(): React.JSX.Element {
     })
     votantesByPuntero.forEach((arr) => arr.sort(sortByApellidoNombre))
 
+    const emptyCell = '<span class="reportEmptyValue">-</span>'
     const rows: string[] = []
-    punteros.forEach((pun, i) => {
+    const totalVotantesReferente = reportesVotantesDeReferente.length
+
+    if (ref != null && punteros.length === 0) {
       rows.push(`
+        <tr class="reportRowRef">
+          <td class="reportNumRef">1</td>
+          <td><span class="roleBadge roleBadge--referente">Referente</span></td>
+          <td class="reportIndent1">
+            <strong>${ref.Apellido.toUpperCase()}${ref.Nombre ? `, ${ref.Nombre}` : ''}</strong>
+          </td>
+          <td>${ref.DNI}</td>
+          <td>${ref.Telefono && ref.Telefono.trim().length > 0 ? ref.Telefono : emptyCell}</td>
+          <td>${ref.EscuelaNombre && ref.EscuelaNombre.trim().length > 0 ? ref.EscuelaNombre : emptyCell}</td>
+          <td>${ref.NroMesa != null ? ref.NroMesa : emptyCell}</td>
+        </tr>`)
+      rows.push(`
+        <tr class="reportRowEmpty reportRowEmpty--punteros">
+          <td class="reportNumEmpty"></td>
+          <td></td>
+          <td class="reportIndent2"><span class="reportInfoTag"><em>Sin punteros asignados</em></span></td>
+          <td>${emptyCell}</td><td>${emptyCell}</td><td>${emptyCell}</td><td>${emptyCell}</td>
+        </tr>`)
+      rows.push(`
+        <tr class="reportSubTotalRow reportSubTotalRow--punterosRef">
+          <td></td>
+          <td></td>
+          <td colspan="5">
+            <strong>
+              Subtotal del referente
+              <span class="roleBadge roleBadge--referente">${ref.Apellido.toUpperCase()}${ref.Nombre ? `, ${ref.Nombre}` : ''}</span>:
+              0 punteros | ${totalVotantesReferente} votantes
+            </strong>
+          </td>
+        </tr>`)
+    } else {
+      punteros.forEach((pun, i) => {
+        rows.push(`
         <tr class="reportRowPun">
           <td class="reportNumPun">${i + 1}</td>
-          <td>Puntero</td>
+          <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
           <td><strong>${pun.Apellido}, ${pun.Nombre}</strong></td>
           <td>${pun.DNI}</td>
-          <td>${pun.Telefono ?? '—'}</td>
-          <td>${pun.EscuelaNombre ?? '—'}</td>
-          <td>${pun.NroMesa ?? '—'}</td>
+          <td>${pun.Telefono && pun.Telefono.trim().length > 0 ? pun.Telefono : emptyCell}</td>
+          <td>${pun.EscuelaNombre && pun.EscuelaNombre.trim().length > 0 ? pun.EscuelaNombre : emptyCell}</td>
+          <td>${pun.NroMesa != null ? pun.NroMesa : emptyCell}</td>
         </tr>`)
-      const votantes = votantesByPuntero.get(pun.Id) ?? []
-      votantes.forEach((v, j) => {
-        rows.push(`
+        const votantes = votantesByPuntero.get(pun.Id) ?? []
+        votantes.forEach((v, j) => {
+          rows.push(`
         <tr class="reportRowVot">
           <td class="reportNumVot">${i + 1}.${j + 1}</td>
-          <td class="reportRolVot">Votante</td>
-          <td class="reportIndent2">${v.Apellido}, ${v.Nombre}</td>
+          <td class="reportRolVot"><span class="roleBadge roleBadge--votante">Votante</span></td>
+          <td class="reportIndent3">${v.Apellido}, ${v.Nombre}</td>
           <td>${v.DNI}</td>
-          <td>${v.Telefono ?? '—'}</td>
-          <td>${v.EscuelaNombre ?? '—'}</td>
-          <td>${v.NroMesa ?? '—'}</td>
+          <td>${v.Telefono && v.Telefono.trim().length > 0 ? v.Telefono : emptyCell}</td>
+          <td>${v.EscuelaNombre && v.EscuelaNombre.trim().length > 0 ? v.EscuelaNombre : emptyCell}</td>
+          <td>${v.NroMesa != null ? v.NroMesa : emptyCell}</td>
         </tr>`)
+        })
+        if (i < punteros.length - 1) rows.push('<tr class="reportJerarquiaSpacer"><td colspan="7"></td></tr>')
       })
-      if (i < punteros.length - 1) rows.push('<tr class="reportJerarquiaSpacer"><td colspan="6"></td></tr>')
-    })
+      rows.push('<tr class="reportJerarquiaSpacer"><td colspan="7"></td></tr>')
+      const subBadge =
+        ref != null
+          ? `<span class="roleBadge roleBadge--referente">${ref.Apellido.toUpperCase()}${ref.Nombre ? `, ${ref.Nombre}` : ''}</span>`
+          : `<span>${title}</span>`
+      rows.push(`
+        <tr class="reportSubTotalRow reportSubTotalRow--punterosRef">
+          <td></td>
+          <td></td>
+          <td colspan="5">
+            <strong>
+              Subtotal del referente
+              ${subBadge}:
+              ${punteros.length} punteros | ${totalVotantesReferente} votantes
+            </strong>
+          </td>
+        </tr>`)
+    }
 
     agentLog({
       runId: 'pre-fix',
@@ -2642,28 +3857,76 @@ export default function PersonasPage(): React.JSX.Element {
           <title>Reporte - Punteros y votantes de referente</title>
           <style>
             @page { size: A4 landscape; margin: 12mm; }
-            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
-            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #dbe3ea; }
             .headerLeft { display: flex; flex-direction: column; }
-            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
-            .meta { color: #555; font-size: 13px; }
-            .metaLine { margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-            th { background: #f3f4f6; }
-            tr.reportRowPun { background: #e5e7eb; font-weight: bold; }
-            tr.reportRowVot { background: #fff; }
-            td.reportNumPun { padding-left: 12px; }
-            td.reportNumVot { padding-left: 40px; }
-            td.reportIndent2 { padding-left: 24px; }
-            tr.reportJerarquiaSpacer td { height: 12px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+            h1 { font-size: 26px; margin: 0; letter-spacing: 0.01em; font-weight: 800; }
+            .meta { color: #475569; font-size: 12px; text-align: right; line-height: 1.4; }
+            .metaLine { margin-top: 4px; color: #64748b; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 9px 10px; text-align: left; vertical-align: middle; }
+            th { background: #f8fafc; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #334155; font-weight: 700; }
+            th:nth-child(1), td:nth-child(1) { width: 8%; }
+            th:nth-child(2), td:nth-child(2) { width: 10%; }
+            th:nth-child(3), td:nth-child(3) { width: 30%; }
+            th:nth-child(4), td:nth-child(4) { width: 12%; white-space: nowrap; }
+            th:nth-child(5), td:nth-child(5) { width: 14%; white-space: nowrap; }
+            th:nth-child(6), td:nth-child(6) { width: 18%; }
+            th:nth-child(7), td:nth-child(7) { width: 8%; white-space: nowrap; }
+            tr.reportRowRef { background: #f5f8fc; font-weight: 720; }
+            tr.reportRowPun { background: #fcfdff; color: #1f2937; }
+            tr.reportRowVot { background: #ffffff; color: #334155; }
+            tr.reportRowVot td { font-size: 11.5px; }
+            tr.reportRowVot td.reportIndent3 { color: #475569; }
+            tr.reportRowEmpty { background: #fafbfc; color: #9ca3af; }
+            tr.reportRowEmpty td { font-size: 11.5px; }
+            tr.reportRowEmpty--punteros td { background: #fafbfc; color: #9ca3af; }
+            tr.reportSubTotalRow { background: #f8fafc; color: #1e293b; }
+            tr.reportSubTotalRow--punterosRef td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; padding-top: 10px; padding-bottom: 10px; }
+            td.reportNumRef { padding-left: 18px; }
+            td.reportNumPun { padding-left: 36px; }
+            td.reportNumVot { padding-left: 56px; }
+            td.reportNumEmpty { padding-left: 56px; color: #94a3b8; }
+            td.reportRolVot { padding-left: 24px; }
+            td.reportIndent1 { padding-left: 18px; }
+            td.reportIndent2 { padding-left: 36px; }
+            td.reportIndent3 { padding-left: 52px; }
+            tr.reportJerarquiaSpacer td { height: 10px; border: none; background: #fff; padding-top: 4px; padding-bottom: 4px; }
+            .reportEmptyValue { color: #94a3b8; font-size: 11px; }
+            .reportInfoTag {
+              display: inline-block;
+              background: #f9fafb;
+              border: 1px solid #eef0f3;
+              border-radius: 4px;
+              padding: 2px 8px;
+              color: #9ca3af;
+              font-size: 10px;
+              font-weight: 400;
+              line-height: 1.35;
+            }
+            .reportInfoTag em { font-style: normal; font-weight: 500; color: #94a3af; }
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 8px;
+              border-radius: 999px;
+              font-size: 10px;
+              font-weight: 700;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--referente { background: #e8f8ee; color: #166534; border-color: #c9edd8; font-weight: 700; }
+            .roleBadge--puntero { background: #fef7df; color: #a16207; border-color: #fce9b8; font-weight: 700; }
+            .roleBadge--votante { background: #f6f7f9; color: #334155; border-color: #e2e8f0; font-weight: 650; }
           </style>
         </head>
         <body>
           <div class="header">
             <div class="headerLeft">
               ${headerPathLine ? `<div class="metaLine">${headerPathLine}</div>` : ''}
-              <h1>PUNTEROS Y VOTANTES DE: ${title}</h1>
+              <h1>PUNTEROS Y VOTANTES</h1>
             </div>
             <div class="meta">
               <div>Fecha: ${formattedDate}</div>
@@ -2722,9 +3985,7 @@ export default function PersonasPage(): React.JSX.Element {
     const grupo = reportesGrupos.find((g) => g.Id === reportesGrupoId) ?? null
     const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
     const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
-    const groupIdsWithRefs = new Set(reportesReferentes.map((r) => r.LiderId).filter((id): id is number => id != null))
-    const gruposSinReferentes = reportesGrupos.filter((g) => !groupIdsWithRefs.has(g.Id))
-    const allLeadersForReport = grupo ? [grupo, ...gruposSinReferentes.filter((g) => g.Id !== grupo.Id)] : gruposSinReferentes
+    const allLeadersForReport = grupo ? [grupo] : []
     // #region agent log
     agentLog({
       runId: 'pre-fix',
@@ -2737,7 +3998,6 @@ export default function PersonasPage(): React.JSX.Element {
         refsForSelectedGroup: list.length,
         totalGroups: reportesGrupos.length,
         totalReferentes: reportesReferentes.length,
-        addedEmptyGroups: gruposSinReferentes.length,
       },
     })
     // #endregion
@@ -2755,9 +4015,7 @@ export default function PersonasPage(): React.JSX.Element {
     const grupo = reportesGrupos.find((g) => g.Id === reportesGrupoId) ?? null
     const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
     const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
-    const groupIdsWithRefs = new Set(reportesReferentes.map((r) => r.LiderId).filter((id): id is number => id != null))
-    const gruposSinReferentes = reportesGrupos.filter((g) => !groupIdsWithRefs.has(g.Id))
-    const allLeadersForReport = grupo ? [grupo, ...gruposSinReferentes.filter((g) => g.Id !== grupo.Id)] : gruposSinReferentes
+    const allLeadersForReport = grupo ? [grupo] : []
     // #region agent log
     agentLog({
       runId: 'pre-fix',
@@ -2770,7 +4028,6 @@ export default function PersonasPage(): React.JSX.Element {
         refsForSelectedGroup: list.length,
         totalGroups: reportesGrupos.length,
         totalReferentes: reportesReferentes.length,
-        addedEmptyGroups: gruposSinReferentes.length,
       },
     })
     // #endregion
@@ -2972,6 +4229,119 @@ export default function PersonasPage(): React.JSX.Element {
     openReportWindow(html)
   }
 
+  function executeReferentesPrint(layout: 'all' | 'byGroup') {
+    setShowReferentesPrintModal(false)
+    // #region agent log
+    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
+      body: JSON.stringify({
+        sessionId: 'b35ed6',
+        location: 'src/pages/personas/index.tsx:executeReferentesPrint',
+        message: 'Referentes print layout chosen',
+        data: { layout },
+        timestamp: Date.now(),
+        runId: 'post-fix',
+        hypothesisId: 'H_REF_PRINT_MODAL_CHOICE',
+      }),
+    }).catch(() => {})
+    // #endregion
+    fetchReportesData()
+      .then(({ grupos, referentes }) => {
+        const leaderById = new Map(grupos.map((g) => [g.Id, g]))
+        const w = window.open('', '_blank')
+        if (!w) return
+        agentLog({
+          runId: 'post-fix',
+          hypothesisId: 'H_REF_TAB_PRINT_ALL_GROUPS',
+          location: 'src/pages/personas/index.tsx:executeReferentesPrint-print',
+          message: 'Printing referentes report from Referentes tab',
+          data: {
+            grupos: grupos.length,
+            referentes: referentes.length,
+            layout,
+          },
+        })
+        w.document.open()
+        w.document.write(
+          buildReportHtml(2, referentes, leaderById, {
+            groupName: 'Varios',
+            allLeaders: grupos,
+            referentesPrintLayout: layout === 'byGroup' ? 'byGroup' : undefined,
+          })
+        )
+        w.document.close()
+        w.focus()
+        w.print()
+      })
+      .catch(() => window.alert('No se pudo imprimir el reporte.'))
+  }
+
+  function executePunterosPrint(layout: 'all' | 'byReferente') {
+    setShowPunterosPrintModal(false)
+    fetchReportesData()
+      .then(({ grupos, referentes, punteros }) => {
+        const w = window.open('', '_blank')
+        if (!w) return
+        agentLog({
+          runId: 'post-fix',
+          hypothesisId: 'H_PUN_TAB_PRINT',
+          location: 'src/pages/personas/index.tsx:executePunterosPrint',
+          message: 'Printing punteros report from Punteros tab',
+          data: {
+            grupos: grupos.length,
+            referentes: referentes.length,
+            punteros: punteros.length,
+            layout,
+          },
+        })
+        w.document.open()
+        w.document.write(
+          buildPunterosPorGrupoReportHtml(
+            { grupos, referentes, punteros },
+            { printLayout: layout === 'byReferente' ? 'byReferente' : 'all' }
+          )
+        )
+        w.document.close()
+        w.focus()
+        w.print()
+      })
+      .catch(() => window.alert('No se pudo imprimir el reporte.'))
+  }
+
+  function executeVotantesPrint(layout: 'all' | 'byPuntero') {
+    setShowVotantesPrintModal(false)
+    fetchReportesData()
+      .then(({ grupos, referentes, punteros, votantes }) => {
+        const w = window.open('', '_blank')
+        if (!w) return
+        agentLog({
+          runId: 'post-fix',
+          hypothesisId: 'H_VOT_TAB_PRINT',
+          location: 'src/pages/personas/index.tsx:executeVotantesPrint',
+          message: 'Printing jerarquia report from Votantes tab',
+          data: {
+            grupos: grupos.length,
+            referentes: referentes.length,
+            punteros: punteros.length,
+            votantes: votantes.length,
+            layout,
+          },
+        })
+        w.document.open()
+        w.document.write(
+          buildJerarquiaReportHtml(
+            { grupos, referentes, punteros, votantes },
+            { printLayout: layout === 'byPuntero' ? 'byPuntero' : undefined }
+          )
+        )
+        w.document.close()
+        w.focus()
+        w.print()
+      })
+      .catch(() => window.alert('No se pudo imprimir el reporte.'))
+  }
+
   function handlePrintReport() {
     if (tab.isReportes) return
     if (filteredList.length === 0) {
@@ -2985,55 +4355,37 @@ export default function PersonasPage(): React.JSX.Element {
     let html: string
 
     if (tab.rol === 2) {
-      fetchReportesData()
-        .then(({ grupos, referentes }) => {
-          const leaderById = new Map(grupos.map((g) => [g.Id, g]))
-          const w = window.open('', '_blank')
-          if (!w) return
-          // #region agent log
-          agentLog({
-            runId: 'post-fix',
-            hypothesisId: 'H_REF_TAB_PRINT_ALL_GROUPS',
-            location: 'src/pages/personas/index.tsx:handlePrintReport-referentes',
-            message: 'Printing referentes report from Referentes tab with all groups',
-            data: { grupos: grupos.length, referentes: referentes.length },
-          })
-          // #endregion
-          w.document.open()
-          w.document.write(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios', allLeaders: grupos }))
-          w.document.close()
-          w.focus()
-          w.print()
-        })
-        .catch(() => window.alert('No se pudo imprimir el reporte.'))
+      setShowReferentesPrintModal(true)
+      // #region agent log
+      agentLog({
+        runId: 'post-fix',
+        hypothesisId: 'H_REF_PRINT_MODAL_OPEN',
+        location: 'src/pages/personas/index.tsx:handlePrintReport-referentes-modal-open',
+        message: 'Set referentes print modal open (modal must render under personasPanel, not only configuracion tab)',
+        data: { tabId: tab.id },
+      })
+      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
+        body: JSON.stringify({
+          sessionId: 'b35ed6',
+          location: 'src/pages/personas/index.tsx:handlePrintReport-referentes-modal-open',
+          message: 'Opened referentes print options modal',
+          data: { tabId: tab.id },
+          timestamp: Date.now(),
+          runId: 'post-fix',
+          hypothesisId: 'H_REF_PRINT_MODAL_OPEN',
+        }),
+      }).catch(() => {})
+      // #endregion
       return
     }
     if (tab.rol === 3) {
-      fetchReportesData()
-        .then(({ grupos, referentes, punteros }) => {
-          const w = window.open('', '_blank')
-          if (!w) return
-          w.document.open()
-          w.document.write(buildPunterosPorGrupoReportHtml({ grupos, referentes, punteros }))
-          w.document.close()
-          w.focus()
-          w.print()
-        })
-        .catch(() => window.alert('No se pudo imprimir el reporte.'))
+      setShowPunterosPrintModal(true)
       return
     }
     if (tab.rol === 4) {
-      fetchReportesData()
-        .then(({ grupos, referentes, punteros, votantes }) => {
-          const w = window.open('', '_blank')
-          if (!w) return
-          w.document.open()
-          w.document.write(buildJerarquiaReportHtml({ grupos, referentes, punteros, votantes }))
-          w.document.close()
-          w.focus()
-          w.print()
-        })
-        .catch(() => window.alert('No se pudo imprimir el reporte.'))
+      setShowVotantesPrintModal(true)
       return
     }
     // Otros roles: listado simple ordenado por apellido
@@ -3504,54 +4856,324 @@ export default function PersonasPage(): React.JSX.Element {
                     </svg>
                     Imprimir reporte
                   </button>
+                  <button
+                    type="button"
+                    className="personasButton personasButtonSecondary"
+                    onClick={openTabDownloadModal}
+                    disabled={showForm || isSubmitting}
+                    title="Descargar PDF o Excel"
+                    aria-label="Descargar"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M12 3v12" />
+                      <path d="m8 11 4 4 4-4" />
+                      <path d="M5 19h14" />
+                    </svg>
+                    Descargar
+                  </button>
                 </>
               )}
             </div>
           )}
         </header>
 
+        {showReferentesPrintModal && (
+          <div
+            className="personasPadronOverlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="referentesPrintModalTitle"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setShowReferentesPrintModal(false)
+            }}
+          >
+            <div className="personasPadronModal">
+              <div className="personasPadronModalHeader">
+                <div>
+                  <h3 id="referentesPrintModalTitle" className="personasPadronModalTitle">
+                    Imprimir listado de referentes
+                  </h3>
+                  <p className="personasPadronModalSubtitle">
+                    Elegí cómo querés armar el documento para imprimir o guardar como PDF.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="personasPadronClose"
+                  onClick={() => setShowReferentesPrintModal(false)}
+                  aria-label="Cerrar"
+                  title="Cerrar"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="personasPadronBody">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <button type="button" className="personasButton personasButtonPrimary" onClick={() => executeReferentesPrint('all')}>
+                    Todo el listado junto
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Un único reporte continuo, como hasta ahora.
+                  </p>
+                  <button type="button" className="personasButton personasButtonSecondary" onClick={() => executeReferentesPrint('byGroup')}>
+                    Una sección por grupo
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Cada grupo en hoja(s) aparte, repitiendo título y columnas. El total general queda al final, separado.
+                  </p>
+                </div>
+                <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="personasButton personasButtonSecondary"
+                    onClick={() => setShowReferentesPrintModal(false)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showPunterosPrintModal && (
+          <div
+            className="personasPadronOverlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="punterosPrintModalTitle"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setShowPunterosPrintModal(false)
+            }}
+          >
+            <div className="personasPadronModal">
+              <div className="personasPadronModalHeader">
+                <div>
+                  <h3 id="punterosPrintModalTitle" className="personasPadronModalTitle">
+                    Imprimir listado de punteros
+                  </h3>
+                  <p className="personasPadronModalSubtitle">
+                    Elegí cómo querés armar el documento para imprimir o guardar como PDF.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="personasPadronClose"
+                  onClick={() => setShowPunterosPrintModal(false)}
+                  aria-label="Cerrar"
+                  title="Cerrar"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="personasPadronBody">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <button type="button" className="personasButton personasButtonPrimary" onClick={() => executePunterosPrint('all')}>
+                    Todo el listado junto
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Un único reporte con todos los grupos, referentes y punteros.
+                  </p>
+                  <button type="button" className="personasButton personasButtonSecondary" onClick={() => executePunterosPrint('byReferente')}>
+                    Una sección por referente
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Cada referente en hoja(s) aparte: se repiten título, nombre del grupo y columnas. El total general va al final, sin fila de encabezados de tabla.
+                  </p>
+                </div>
+                <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="personasButton personasButtonSecondary"
+                    onClick={() => setShowPunterosPrintModal(false)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showVotantesPrintModal && (
+          <div
+            className="personasPadronOverlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="votantesPrintModalTitle"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setShowVotantesPrintModal(false)
+            }}
+          >
+            <div className="personasPadronModal">
+              <div className="personasPadronModalHeader">
+                <div>
+                  <h3 id="votantesPrintModalTitle" className="personasPadronModalTitle">
+                    Imprimir jerarquía (votantes)
+                  </h3>
+                  <p className="personasPadronModalSubtitle">
+                    Elegí cómo querés armar el documento para imprimir o guardar como PDF.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="personasPadronClose"
+                  onClick={() => setShowVotantesPrintModal(false)}
+                  aria-label="Cerrar"
+                  title="Cerrar"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="personasPadronBody">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <button type="button" className="personasButton personasButtonPrimary" onClick={() => executeVotantesPrint('all')}>
+                    Todo el listado junto
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Un único reporte con la jerarquía completa (grupo → referente → puntero → votante).
+                  </p>
+                  <button type="button" className="personasButton personasButtonSecondary" onClick={() => executeVotantesPrint('byPuntero')}>
+                    Una sección por puntero
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Cada puntero en hoja(s) aparte: se repiten título, nombre del grupo, columnas y el bloque grupo + referente + puntero + sus votantes. El total general va al final, sin encabezados de tabla.
+                  </p>
+                </div>
+                <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="personasButton personasButtonSecondary"
+                    onClick={() => setShowVotantesPrintModal(false)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {downloadModalTarget != null && (
+          <div
+            className="personasPadronOverlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="personasDownloadModalTitle"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setDownloadModalTarget(null)
+            }}
+          >
+            <div className="personasPadronModal">
+              <div className="personasPadronModalHeader">
+                <div>
+                  <h3 id="personasDownloadModalTitle" className="personasPadronModalTitle">
+                    {getDownloadModalTitle(downloadModalTarget)}
+                  </h3>
+                  <p className="personasPadronModalSubtitle">
+                    Elegí guardar el reporte como PDF (mediante impresión) o generar un archivo Excel compatible (.csv).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="personasPadronClose"
+                  onClick={() => setDownloadModalTarget(null)}
+                  aria-label="Cerrar"
+                  title="Cerrar"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="personasPadronBody">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <button type="button" className="personasButton personasButtonPrimary" onClick={handleDownloadModalPdf}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M6 9V3h12v6" />
+                      <path d="M6 17v4h12v-4" />
+                      <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                    </svg>
+                    Guardar como PDF
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Se abre la ventana de impresión del navegador; como destino elegí «Guardar como PDF» o «Microsoft Print
+                    to PDF».
+                  </p>
+                  <button type="button" className="personasButton personasButtonSecondary" onClick={handleDownloadModalExcel}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                      <path d="M12 3v12" />
+                      <path d="m8 11 4 4 4-4" />
+                      <path d="M5 19h14" />
+                    </svg>
+                    Generar Excel (.csv)
+                  </button>
+                  <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                    Se descarga un archivo .csv (UTF-8) que podés abrir con Excel u otra planilla.
+                  </p>
+                </div>
+                <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="button" className="personasButton personasButtonSecondary" onClick={() => setDownloadModalTarget(null)}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {tab.id === 'inicio' ? (
           <div key="inicioPanel" className="reportesPanel">
             {statsLoading ? (
               <p className="personasLoading">Cargando estadísticas...</p>
             ) : (
-              <div className="reportesGrid">
-                <div className="reportesCard">
-                  <div className="reportesCardLabelRow">
-                    <span className="reportesCardIconWrap">{tabIcons.grupos}</span>
-                    <span className="reportesCardLabel">Grupos</span>
+              <>
+                <div className="reportesGrid">
+                  <div className="reportesCard">
+                    <div className="reportesCardLabelRow">
+                      <span className="reportesCardIconWrap">{tabIcons.grupos}</span>
+                      <span className="reportesCardLabel">Grupos</span>
+                    </div>
+                    <span className="reportesCardValue">{stats.grupos}</span>
                   </div>
-                  <span className="reportesCardValue">{stats.grupos}</span>
-                </div>
-                <div className="reportesCard">
-                  <div className="reportesCardLabelRow">
-                    <span className="reportesCardIconWrap">{tabIcons.referentes}</span>
-                    <span className="reportesCardLabel">Referentes</span>
+                  <div className="reportesCard">
+                    <div className="reportesCardLabelRow">
+                      <span className="reportesCardIconWrap">{tabIcons.referentes}</span>
+                      <span className="reportesCardLabel">Referentes</span>
+                    </div>
+                    <span className="reportesCardValue">{stats.referentes}</span>
                   </div>
-                  <span className="reportesCardValue">{stats.referentes}</span>
-                </div>
-                <div className="reportesCard">
-                  <div className="reportesCardLabelRow">
-                    <span className="reportesCardIconWrap">{tabIcons.punteros}</span>
-                    <span className="reportesCardLabel">Punteros</span>
+                  <div className="reportesCard">
+                    <div className="reportesCardLabelRow">
+                      <span className="reportesCardIconWrap">{tabIcons.punteros}</span>
+                      <span className="reportesCardLabel">Punteros</span>
+                    </div>
+                    <span className="reportesCardValue">{stats.punteros}</span>
                   </div>
-                  <span className="reportesCardValue">{stats.punteros}</span>
-                </div>
-                <div className="reportesCard">
-                  <div className="reportesCardLabelRow">
-                    <span className="reportesCardIconWrap">{tabIcons.votantes}</span>
-                    <span className="reportesCardLabel">Votantes</span>
+                  <div className="reportesCard">
+                    <div className="reportesCardLabelRow">
+                      <span className="reportesCardIconWrap">{tabIcons.votantes}</span>
+                      <span className="reportesCardLabel">Votantes</span>
+                    </div>
+                    <span className="reportesCardValue">{stats.votantes}</span>
                   </div>
-                  <span className="reportesCardValue">{stats.votantes}</span>
-                </div>
-                <div className="reportesCard reportesCardTotal">
-                  <div className="reportesCardLabelRow">
-                    <span className="reportesCardIconWrap">{tabIcons.reportes}</span>
-                    <span className="reportesCardLabel">Total de votos</span>
+                  <div className="reportesCard reportesCardTotal">
+                    <div className="reportesCardLabelRow">
+                      <span className="reportesCardIconWrap">{tabIcons.reportes}</span>
+                      <span className="reportesCardLabel">Total de votos</span>
+                    </div>
+                    <p className="reportesCardHint">Suma de Punteros + Votantes</p>
+                    <span className="reportesCardValue">{stats.punteros + stats.votantes}</span>
                   </div>
-                  <span className="reportesCardValue">{stats.referentes + stats.punteros + stats.votantes}</span>
                 </div>
-              </div>
+                <div className="reportesInicioDiagramWrap">
+                  <img
+                    className="reportesInicioDiagram"
+                    src={`${import.meta.env.BASE_URL}ImagenControl.png`}
+                    alt="Estructura jerárquica del territorio: Grupo, Referente, Puntero y Votante"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
+              </>
             )}
 
             {showAppHelpModal && (
@@ -4185,6 +5807,21 @@ export default function PersonasPage(): React.JSX.Element {
                         </svg>
                         <span className="reportesActionLabel">Imprimir reporte</span>
                       </button>
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary reportesActionButtonWithText"
+                        onClick={() => setDownloadModalTarget({ kind: 'reportes', report: 'cantidades' })}
+                        disabled={cantidadesTotalesRows.length === 0}
+                        title="Descargar"
+                        aria-label="Descargar"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M12 3v12" />
+                          <path d="m8 11 4 4 4-4" />
+                          <path d="M5 19h14" />
+                        </svg>
+                        <span className="reportesActionLabel">Descargar</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -4289,6 +5926,21 @@ export default function PersonasPage(): React.JSX.Element {
                         </svg>
                         <span className="reportesActionLabel">Imprimir reporte</span>
                       </button>
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary reportesActionButtonWithText"
+                        onClick={() => setDownloadModalTarget({ kind: 'reportes', report: 'escuelaMesa' })}
+                        disabled={reportesPersonasByEscuelaMesa.length === 0}
+                        title="Descargar"
+                        aria-label="Descargar"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M12 3v12" />
+                          <path d="m8 11 4 4 4-4" />
+                          <path d="M5 19h14" />
+                        </svg>
+                        <span className="reportesActionLabel">Descargar</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -4351,7 +6003,11 @@ export default function PersonasPage(): React.JSX.Element {
                           }}
                         >
                           <option value="">
-                            {reportesReferenteSelectDisabled ? 'Primero seleccioná un grupo' : 'Todos los referentes'}
+                            {reportesReferenteBloqueadoSinGrupo
+                              ? 'Primero seleccioná un grupo'
+                              : reportesReferentesOptions.length === 0
+                                ? 'Sin referentes disponibles'
+                                : 'Todos los referentes'}
                           </option>
                         {reportesReferentesOptions.map((r) => (
                             <option key={`rep-ref-${r.Id}`} value={r.Id}>
@@ -4379,7 +6035,11 @@ export default function PersonasPage(): React.JSX.Element {
                           }}
                         >
                           <option value="">
-                            {reportesPunteroSelectDisabled ? 'Primero seleccioná un referente' : 'Todos los punteros'}
+                            {reportesPunteroBloqueadoSinReferente
+                              ? 'Primero seleccioná un referente'
+                              : reportesPunterosDeReferenteSorted.length === 0
+                                ? 'Sin punteros disponibles'
+                                : 'Todos los punteros'}
                           </option>
                           {reportesPunterosOptions.map((p) => (
                             <option key={`rep-pun-${p.Id}`} value={p.Id}>
@@ -4399,10 +6059,16 @@ export default function PersonasPage(): React.JSX.Element {
                             const referente = reportesReferenteId != null ? reportesReferentesSorted.find((r) => r.Id === reportesReferenteId) : null
                             const puntero = reportesPunteroId != null ? reportesPunterosSorted.find((p) => p.Id === reportesPunteroId) : null
 
-                            if (reportesGrupoId == null) return 'Reporte de grupos (listado general)'
-                            if (reportesReferenteId == null) return `Reporte de referentes del grupo ${grupo ? `${grupo.Nombre} ${grupo.Apellido}` : ''}`.trim()
-                            if (reportesPunteroId == null) return `Reporte de punteros del referente ${referente ? `${referente.Nombre} ${referente.Apellido}` : ''}`.trim()
-                            return `Reporte de votantes del puntero ${puntero ? `${puntero.Nombre} ${puntero.Apellido}` : ''}`.trim()
+                            if (reportesPunteroId != null) {
+                              return `Reporte de votantes del puntero ${puntero ? `${puntero.Apellido}, ${puntero.Nombre}` : ''}`.trim()
+                            }
+                            if (reportesReferenteId != null) {
+                              return `Reporte de punteros y votantes del referente ${referente ? `${referente.Apellido}, ${referente.Nombre}` : ''}`.trim()
+                            }
+                            if (reportesGrupoId != null) {
+                              return `Reporte de referentes del grupo ${grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : ''}`.trim()
+                            }
+                            return 'Reporte de grupos (listado general)'
                           })()}
                         </span>
                       </div>
@@ -4438,6 +6104,21 @@ export default function PersonasPage(): React.JSX.Element {
                           <path d="M9 17h6" />
                         </svg>
                         <span className="reportesActionLabel">Imprimir reporte</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary reportesActionButtonWithText"
+                        onClick={() => setDownloadModalTarget({ kind: 'reportes', report: 'estructura' })}
+                        disabled={reportesGrupos.length === 0}
+                        title="Descargar"
+                        aria-label="Descargar"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M12 3v12" />
+                          <path d="m8 11 4 4 4-4" />
+                          <path d="M5 19h14" />
+                        </svg>
+                        <span className="reportesActionLabel">Descargar</span>
                       </button>
                     </div>
                   </div>
@@ -4476,10 +6157,11 @@ export default function PersonasPage(): React.JSX.Element {
                     </p>
                     <p className="reportesStructureInfoP">Los filtros son opcionales.</p>
                     <ul className="reportesStructureInfoList">
-                      <li>Sin filtros: se mostrará el listado general.</li>
-                      <li>Con grupo: se mostrarán sus referentes.</li>
-                      <li>Con referente: se mostrarán sus punteros.</li>
-                      <li>Con puntero: se mostrarán sus votantes.</li>
+                      <li>Sin filtros: listado general de grupos.</li>
+                      <li>Grupo &quot;Todos&quot;: solo listado de grupos; referente y puntero quedan bloqueados hasta elegir un grupo.</li>
+                      <li>Con un grupo: referentes de ese grupo; el puntero se habilita al elegir un referente concreto.</li>
+                      <li>Con referente: punteros y votantes de ese referente.</li>
+                      <li>Con puntero: votantes de ese puntero.</li>
                     </ul>
                   </div>
                 </aside>
