@@ -1231,13 +1231,29 @@
 }
 
 .reportesListadosWrap {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 20px;
+  width: 100%;
+}
+
+.reportesListadosWrap > :nth-child(1) {
+  order: 3;
+}
+
+.reportesListadosWrap > :nth-child(2) {
+  order: 2;
+}
+
+.reportesListadosWrap > :nth-child(3) {
+  order: 1;
 }
 
 .reportesRow {
   display: grid;
   gap: 20px;
+  width: min(94%, 1120px);
 }
 
 .reportesRowTop {
@@ -1303,6 +1319,10 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.reportesFiltersEscuelaMesa {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .reportesFilter {

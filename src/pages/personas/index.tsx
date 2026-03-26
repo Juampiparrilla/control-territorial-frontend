@@ -115,6 +115,8 @@ export default function PersonasPage(): React.JSX.Element {
   const [reportesGrupoId, setReportesGrupoId] = React.useState<number | null>(null)
   const [reportesReferenteId, setReportesReferenteId] = React.useState<number | null>(null)
   const [reportesPunteroId, setReportesPunteroId] = React.useState<number | null>(null)
+  const [reportesEscuelaNombre, setReportesEscuelaNombre] = React.useState('')
+  const [reportesMesaNro, setReportesMesaNro] = React.useState('')
   const [padronFile, setPadronFile] = React.useState<File | null>(null)
   const [padronStep, setPadronStep] = React.useState<1 | 2>(1)
   const [showPadronModal, setShowPadronModal] = React.useState(false)
@@ -603,6 +605,8 @@ export default function PersonasPage(): React.JSX.Element {
         setReportesReferentes(ref)
         setReportesPunteros(pun)
         setReportesVotantes(vot)
+        setReportesEscuelaNombre('')
+        setReportesMesaNro('')
         agentLog({
           runId: 'pre-fix',
           hypothesisId: 'H1',
@@ -630,6 +634,8 @@ export default function PersonasPage(): React.JSX.Element {
         setReportesGrupoId(null)
         setReportesReferenteId(null)
         setReportesPunteroId(null)
+        setReportesEscuelaNombre('')
+        setReportesMesaNro('')
       })
       .finally(() => setReportesListsLoading(false))
   }, [tab.isReportes])
@@ -855,6 +861,54 @@ export default function PersonasPage(): React.JSX.Element {
     return rows
   }, [reportesReferentes, reportesPunteros, reportesVotantes])
 
+  const reportesPersonasAll = React.useMemo(() => {
+    return [...reportesGrupos, ...reportesReferentes, ...reportesPunteros, ...reportesVotantes]
+  }, [reportesGrupos, reportesReferentes, reportesPunteros, reportesVotantes])
+
+  const reportesEscuelasOptions = React.useMemo(() => {
+    return Array.from(
+      new Set(
+        reportesPersonasAll
+          .map((p) => (p.EscuelaNombre ?? '').trim())
+          .filter((s) => s.length > 0)
+      )
+    ).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+  }, [reportesPersonasAll])
+
+  const reportesMesasOptions = React.useMemo(() => {
+    if (!reportesEscuelaNombre) return []
+    return Array.from(
+      new Set(
+        reportesPersonasAll
+          .filter((p) => (p.EscuelaNombre ?? '').trim() === reportesEscuelaNombre)
+          .map((p) => (p.NroMesa != null ? String(p.NroMesa) : ''))
+          .filter((m) => m.length > 0)
+      )
+    ).sort((a, b) => Number(a) - Number(b))
+  }, [reportesPersonasAll, reportesEscuelaNombre])
+
+  const reportesPersonasByEscuelaMesa = React.useMemo(() => {
+    const byEscuela = reportesEscuelaNombre
+      ? reportesPersonasAll.filter((p) => (p.EscuelaNombre ?? '').trim() === reportesEscuelaNombre)
+      : reportesPersonasAll
+
+    const byMesa = reportesMesaNro
+      ? byEscuela.filter((p) => (p.NroMesa != null ? String(p.NroMesa) : '') === reportesMesaNro)
+      : byEscuela
+
+    return [...byMesa].sort((a, b) => {
+      const ap = (a.Apellido || '').toLowerCase()
+      const bp = (b.Apellido || '').toLowerCase()
+      if (ap < bp) return -1
+      if (ap > bp) return 1
+      const an = (a.Nombre || '').toLowerCase()
+      const bn = (b.Nombre || '').toLowerCase()
+      if (an < bn) return -1
+      if (an > bn) return 1
+      return 0
+    })
+  }, [reportesPersonasAll, reportesEscuelaNombre, reportesMesaNro])
+
   function openCreate() {
     setEditingId(null)
     setForm(emptyForm(tab.rol))
@@ -919,20 +973,31 @@ export default function PersonasPage(): React.JSX.Element {
       groups.get(idKey)!.persons.push(p)
     })
 
-    // Para reportes "globales": incluir líderes sin registros (ej. referentes sin punteros)
-    if (Array.isArray(options?.allLeaders) && options!.allLeaders.length > 0) {
-      options!.allLeaders.forEach((l) => {
+    const autoLeadersForReferentes =
+      rol === 2 && (!Array.isArray(options?.allLeaders) || options!.allLeaders.length === 0)
+        ? reportesGrupos
+        : []
+    const leadersToInclude =
+      Array.isArray(options?.allLeaders) && options!.allLeaders.length > 0
+        ? options!.allLeaders
+        : autoLeadersForReferentes
+
+    // Para reportes por líder: incluir líderes sin registros (ej. grupos sin referentes)
+    if (leadersToInclude.length > 0) {
+      leadersToInclude.forEach((l) => {
         if (!groups.has(l.Id)) {
           groups.set(l.Id, { leaderName: `${l.Nombre} ${l.Apellido}`.trim(), persons: [] })
         }
       })
+      // #region agent log
       agentLog({
         runId: 'pre-fix',
         hypothesisId: 'H20',
         location: 'src/pages/personas/index.tsx:buildReportHtml-allLeaders',
         message: 'Included empty leaders in report',
-        data: { rol, leaders: options!.allLeaders.length, groups: groups.size },
+        data: { rol, leaders: leadersToInclude.length, groups: groups.size, autoFromGrupos: rol === 2 && !options?.allLeaders },
       })
+      // #endregion
     }
 
     const groupEntries = Array.from(groups.entries()).sort(([, a], [, b]) => {
@@ -945,13 +1010,37 @@ export default function PersonasPage(): React.JSX.Element {
       return a.leaderName.localeCompare(b.leaderName, 'es', { sensitivity: 'base' })
     })
 
+    // #region agent log
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_REF_REPORT_GROUP_COVERAGE',
+      location: 'src/pages/personas/index.tsx:buildReportHtml-group-coverage',
+      message: 'Listado report grouped leaders coverage',
+      data: {
+        rol,
+        includeRolColumn,
+        totalLeaders: groupEntries.length,
+        emptyLeaders: groupEntries.filter(([, g]) => g.persons.length === 0).length,
+      },
+    })
+    // #endregion
+
+    const isReferentesReport = rol === 2
+    const emptyCell = `<span class="reportEmptyValue">-</span>`
+    const colspan = includeRolColumn ? 7 : 6
+
     const rowsHtml = groupEntries
       .map(([leaderId, group], groupIndex) => {
         const leaderName = group.leaderName
         const parts = leaderName.split(' ')
         const leaderApellido = parts.length > 1 ? parts[parts.length - 1] : leaderName
         const leaderNombre = parts.length > 1 ? parts.slice(0, -1).join(' ') : ''
-        const leaderDni = leaderId > 0 ? (leaderById?.get(leaderId)?.DNI ?? '—') : '—'
+        const leaderEntity = leaderId > 0 ? leaderById?.get(leaderId) : undefined
+        const leaderDniValue = leaderId > 0 ? (leaderById?.get(leaderId)?.DNI ?? null) : null
+        const leaderDni = leaderDniValue && leaderDniValue.trim().length > 0 ? leaderDniValue : emptyCell
+        const leaderTelefonoValue = leaderEntity?.Telefono ?? null
+        const leaderEscuelaValue = leaderEntity?.EscuelaNombre ?? null
+        const leaderMesaValue = leaderEntity?.NroMesa ?? null
 
         const sortedPersons = [...group.persons].sort((a, b) => {
           const ap = (a.Apellido || '').toLowerCase()
@@ -966,46 +1055,62 @@ export default function PersonasPage(): React.JSX.Element {
         })
 
         const leaderRow = `
-            <tr class="reportLeaderRow">
+            <tr class="${isReferentesReport ? 'reportLeaderRow reportLeaderRow--referentes' : 'reportLeaderRow'}">
               <td>${groupIndex + 1}</td>
               ${includeRolColumn ? `<td><span class="roleBadge roleBadge--${leaderRoleKey}">${leaderRolLabel}</span></td>` : ''}
               <td><span class="roleName--${leaderRoleKey}">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span></td>
               <td>${leaderDni}</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
+              <td>${leaderTelefonoValue && leaderTelefonoValue.trim().length > 0 ? leaderTelefonoValue : emptyCell}</td>
+              <td>${leaderEscuelaValue && leaderEscuelaValue.trim().length > 0 ? leaderEscuelaValue : emptyCell}</td>
+              <td>${leaderMesaValue != null ? leaderMesaValue : emptyCell}</td>
             </tr>`
 
-        const subRows = sortedPersons
-          .map(
-            (p, idx) => `
-                <tr class="reportSubRow">
+        const subRows = sortedPersons.length
+          ? sortedPersons
+              .map((p, idx) => {
+                const phone = p.Telefono && p.Telefono.trim().length > 0 ? p.Telefono : emptyCell
+                const school = p.EscuelaNombre && p.EscuelaNombre.trim().length > 0 ? p.EscuelaNombre : emptyCell
+                const mesa = p.NroMesa != null ? p.NroMesa : emptyCell
+                return `
+                <tr class="${isReferentesReport ? 'reportSubRow reportSubRow--referentes' : 'reportSubRow'}">
                   <td>${groupIndex + 1}.${idx + 1}</td>
                   ${includeRolColumn ? `<td class="reportRolCell"><span class="roleBadge roleBadge--${subRoleKey}">${subRolLabel}</span></td>` : ''}
                   <td class="reportSubApellido roleName--${subRoleKey}">${p.Apellido}, ${p.Nombre}</td>
                   <td>${p.DNI}</td>
-                  <td>${p.Telefono ?? '—'}</td>
-                  <td>${p.EscuelaNombre ?? '—'}</td>
-                  <td>${p.NroMesa ?? '—'}</td>
+                  <td>${phone}</td>
+                  <td>${school}</td>
+                  <td>${mesa}</td>
                 </tr>`
-          )
-          .join('')
+              })
+              .join('')
+          : `
+            <tr class="reportInfoRow">
+              <td></td>
+              ${includeRolColumn ? `<td class="reportRolCell"></td>` : ''}
+              <td colspan="${includeRolColumn ? 5 : 5}"><span class="reportInfoTag"><em>Sin referentes asignados</em></span></td>
+            </tr>`
+
+        const subtotalLabel = isReferentesReport
+          ? `Subtotal del grupo <span class="roleBadge roleBadge--grupo">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span>: ${sortedPersons.length} referentes`
+          : rol === 4
+            ? `Subtotal del puntero <span class="roleBadge roleBadge--puntero">${leaderApellido.toUpperCase()}${leaderNombre ? `, ${leaderNombre}` : ''}</span>: ${sortedPersons.length} votantes`
+            : `Subtotal : ${sortedPersons.length}`
 
         const subtotalRow = includeRolColumn
           ? `
-            <tr class="reportSubTotalRow">
+            <tr class="${isReferentesReport ? 'reportSubTotalRow reportSubTotalRow--referentes' : 'reportSubTotalRow'}">
               <td></td>
               <td></td>
-              <td><strong>Subtotal : ${sortedPersons.length}</strong></td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
+              <td><strong>${subtotalLabel}</strong></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
             </tr>`
           : ''
 
         const spacer = groupIndex < groupEntries.length - 1
-          ? `<tr class="reportGroupSpacer"><td colspan="${includeRolColumn ? 7 : 6}"></td></tr>`
+          ? `<tr class="reportGroupSpacer"><td colspan="${colspan}"></td></tr>`
           : ''
         return leaderRow + subRows + subtotalRow + spacer
       })
@@ -1014,16 +1119,19 @@ export default function PersonasPage(): React.JSX.Element {
     const totalRowHtml = includeRolColumn
       ? (() => {
           const total = groupEntries.reduce((acc, [, g]) => acc + g.persons.length, 0)
+          const totalLabel = isReferentesReport
+            ? `TOTAL GENERAL: ${groupEntries.length} grupos | ${total} referentes`
+            : `TOTAL : ${total}`
           return `
-            <tr class="reportBlankRow"><td colspan="7"></td></tr>
-            <tr class="reportGrandTotalRow">
+            <tr class="reportBlankRow"><td colspan="${colspan}"></td></tr>
+            <tr class="${isReferentesReport ? 'reportGrandTotalRow reportGrandTotalRow--referentes' : 'reportGrandTotalRow'}">
               <td></td>
               <td></td>
-              <td><strong>TOTAL : ${total}</strong></td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
-              <td>—</td>
+              <td><strong>${totalLabel}</strong></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
             </tr>`
         })()
       : ''
@@ -1038,38 +1146,65 @@ export default function PersonasPage(): React.JSX.Element {
           <style>
             @page { size: A4 landscape; margin: 12mm; }
             body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
-            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #dbe3ea; }
             .headerLeft { display: flex; flex-direction: column; }
-            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
-            .meta { color: #555; font-size: 13px; }
-            .metaLine { margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-            th { background: #f3f4f6; }
-            tr.reportLeaderRow { background: #e5e7eb; font-weight: bold; }
-            tr.reportSubRow { background: #fff; }
-            tr.reportSubRow td.reportSubApellido { padding-left: 24px; }
-            tr.reportSubTotalRow { background: #f3f4f6; font-weight: 700; }
+            h1 { font-size: 26px; margin: 0; letter-spacing: 0.01em; font-weight: 800; color: #0f172a; }
+            .meta { color: #475569; font-size: 12px; text-align: right; line-height: 1.4; }
+            .metaLine { margin-top: 4px; color: #64748b; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; color: #111827; table-layout: fixed; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 9px 10px; text-align: left; vertical-align: middle; }
+            th { background: #f8fafc; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #334155; font-weight: 700; }
+            th:nth-child(1), td:nth-child(1) { width: 6%; }
+            th:nth-child(2), td:nth-child(2) { width: 8%; }
+            th:nth-child(3), td:nth-child(3) { width: 32%; }
+            th:nth-child(4), td:nth-child(4) { width: 11%; white-space: nowrap; }
+            th:nth-child(5), td:nth-child(5) { width: 14%; white-space: nowrap; }
+            th:nth-child(6), td:nth-child(6) { width: 20%; }
+            th:nth-child(7), td:nth-child(7) { width: 9%; white-space: nowrap; }
+            tr.reportLeaderRow { background: #edf2f7; font-weight: 700; }
+            tr.reportLeaderRow--referentes { background: #eaf1f8; }
+            tr.reportSubRow { background: #ffffff; }
+            tr.reportSubRow--referentes:nth-child(odd) { background: #fcfdff; }
+            tr.reportSubRow td.reportSubApellido { padding-left: 22px; }
+            tr.reportInfoRow td { color: #64748b; font-style: italic; background: #f8fafc; padding-top: 6px; padding-bottom: 6px; }
+            tr.reportInfoRow td:nth-child(4),
+            tr.reportInfoRow td:nth-child(5),
+            tr.reportInfoRow td:nth-child(6),
+            tr.reportInfoRow td:nth-child(7) { color: #cbd5e1; }
+            .reportInfoTag {
+              display: inline-block;
+              background: #f1f5f9;
+              border: 1px solid #e2e8f0;
+              border-radius: 999px;
+              padding: 2px 10px;
+              color: #475569;
+              font-size: 11px;
+              line-height: 1.2;
+            }
+            tr.reportSubTotalRow { background: #f8fafc; font-weight: 700; color: #1f2937; }
+            tr.reportSubTotalRow--referentes td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; }
             tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
+            tr.reportGrandTotalRow--referentes td { background: #e2e8f0; border-top: 2px solid #94a3b8; font-size: 12px; }
             tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
-            tr.reportGroupSpacer td { height: 10px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+            tr.reportGroupSpacer td { height: 14px; border: none; background: #fff; }
+            .reportEmptyValue { color: #94a3b8; font-size: 11px; }
             /* Role badges (consistent with UI) */
             .roleBadge {
               display: inline-flex;
               align-items: center;
               justify-content: center;
-              padding: 2px 10px;
+              padding: 2px 8px;
               border-radius: 999px;
-              font-size: 11px;
-              font-weight: 800;
+              font-size: 10px;
+              font-weight: 700;
               line-height: 1.2;
               border: 1px solid transparent;
               white-space: nowrap;
             }
-            .roleBadge--grupo { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
-            .roleBadge--referente { background: #dcfce7; color: #15803d; border-color: #bbf7d0; font-weight: 750; }
-            .roleBadge--puntero { background: #fef3c7; color: #b45309; border-color: #fde68a; font-weight: 700; }
-            .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
+            .roleBadge--grupo { background: #e8f0ff; color: #1e40af; border-color: #c7d7fe; }
+            .roleBadge--referente { background: #e8f8ee; color: #166534; border-color: #c9edd8; font-weight: 700; }
+            .roleBadge--puntero { background: #fef7df; color: #a16207; border-color: #fce9b8; font-weight: 700; }
+            .roleBadge--votante { background: #f6f7f9; color: #334155; border-color: #e2e8f0; font-weight: 650; }
             .roleName--grupo { font-weight: 850; }
             .roleName--referente { font-weight: 750; }
             .roleName--puntero { font-weight: 650; }
@@ -1088,11 +1223,24 @@ export default function PersonasPage(): React.JSX.Element {
             </div>
           </div>
           <table>
+            ${
+              includeRolColumn
+                ? `<colgroup>
+              <col style="width:6%">
+              <col style="width:8%">
+              <col style="width:32%">
+              <col style="width:11%">
+              <col style="width:14%">
+              <col style="width:20%">
+              <col style="width:9%">
+            </colgroup>`
+                : ''
+            }
             <thead>
               <tr>
                 <th>Nº</th>
                 ${includeRolColumn ? '<th>Rol</th>' : ''}
-                <th>Apellido/s y Nombre/s</th>
+                <th>Apellido y Nombre</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
                 <th>Escuela</th>
@@ -1153,82 +1301,104 @@ export default function PersonasPage(): React.JSX.Element {
     })
     votantesByLider.forEach((arr) => arr.sort(sortByApellidoNombre))
 
+    const emptyValue = '<span class="reportEmptyValue">-</span>'
     const rows: string[] = []
     let totalReferentes = 0
     let totalPunteros = 0
     let totalVotantes = 0
     grupos.forEach((g, gi) => {
       const numG = gi + 1
+      const refsForGroup = refsByGrupo.get(g.Id) ?? []
+      let groupPunterosPreview = 0
+      let groupVotantesPreview = 0
+      refsForGroup.forEach((ref) => {
+        const punteros = punterosByLider.get(ref.Id) ?? []
+        groupPunterosPreview += punteros.length
+        punteros.forEach((pun) => {
+          groupVotantesPreview += (votantesByLider.get(pun.Id) ?? []).length
+        })
+      })
       rows.push(`
         <tr class="reportRowGroup">
           <td class="reportNumGroup">${numG}</td>
           <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
-          <td><strong>${g.Apellido}, ${g.Nombre}</strong></td>
+          <td>
+            <strong>${g.Apellido}, ${g.Nombre}</strong>
+            <div class="reportInlineSummary">Referentes: ${refsForGroup.length} | Punteros: ${groupPunterosPreview} | Votantes: ${groupVotantesPreview}</div>
+          </td>
           <td>${g.DNI}</td>
-          <td>${g.Telefono ?? '—'}</td>
-          <td>${g.EscuelaNombre ?? '—'}</td>
-          <td>${g.NroMesa ?? '—'}</td>
+          <td>${g.Telefono ?? emptyValue}</td>
+          <td>${g.EscuelaNombre ?? emptyValue}</td>
+          <td>${g.NroMesa ?? emptyValue}</td>
         </tr>`)
 
-      const refsForGroup = refsByGrupo.get(g.Id) ?? []
       const groupReferentes = refsForGroup.length
       let groupPunteros = 0
       let groupVotantes = 0
       if (refsForGroup.length === 0) {
         rows.push(`
-          <tr class="reportRowEmpty">
-            <td class="reportNumEmpty">${numG}.—</td>
-            <td><span class="roleBadge roleBadge--referente">Referente</span></td>
-            <td class="reportIndent1"><em>Sin referentes</em></td>
-            <td>—</td><td>—</td><td>—</td><td>—</td>
+          <tr class="reportRowEmpty reportRowEmpty--referentes">
+            <td class="reportNumEmpty"></td>
+            <td></td>
+            <td class="reportIndent1"><span class="reportInfoTag"><em>Sin referentes asignados</em></span></td>
+            <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
           </tr>`)
       } else {
         refsForGroup.forEach((ref, ri) => {
           const numRef = `${numG}.${ri + 1}`
+          const punterosPreview = punterosByLider.get(ref.Id) ?? []
+          const votantesPreview = punterosPreview.reduce((acc, pun) => acc + ((votantesByLider.get(pun.Id) ?? []).length), 0)
           rows.push(`
             <tr class="reportRowRef">
               <td class="reportNumRef">${numRef}</td>
               <td><span class="roleBadge roleBadge--referente">Referente</span></td>
-              <td class="reportIndent1"><strong>${ref.Apellido}, ${ref.Nombre}</strong></td>
+              <td class="reportIndent1">
+                <strong>${ref.Apellido}, ${ref.Nombre}</strong>
+                <div class="reportInlineSummary">Punteros: ${punterosPreview.length} | Votantes: ${votantesPreview}</div>
+              </td>
               <td>${ref.DNI}</td>
-              <td>${ref.Telefono ?? '—'}</td>
-              <td>${ref.EscuelaNombre ?? '—'}</td>
-              <td>${ref.NroMesa ?? '—'}</td>
+              <td>${ref.Telefono ?? emptyValue}</td>
+              <td>${ref.EscuelaNombre ?? emptyValue}</td>
+              <td>${ref.NroMesa ?? emptyValue}</td>
             </tr>`)
 
-          const punteros = punterosByLider.get(ref.Id) ?? []
+          const punteros = punterosPreview
           groupPunteros += punteros.length
           if (punteros.length === 0) {
             rows.push(`
-              <tr class="reportRowEmpty">
-                <td class="reportNumEmpty">${numRef}.—</td>
-                <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
-                <td class="reportIndent2"><em>Sin punteros</em></td>
-                <td>—</td><td>—</td><td>—</td><td>—</td>
+              <tr class="reportRowEmpty reportRowEmpty--punteros">
+                <td class="reportNumEmpty"></td>
+                <td></td>
+                <td class="reportIndent2"><span class="reportInfoTag"><em>Sin punteros asignados</em></span></td>
+                <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
               </tr>`)
           } else {
             punteros.forEach((pun, pj) => {
               const numPun = `${numRef}.${pj + 1}`
+              const votantesPreviewByPuntero = votantesByLider.get(pun.Id) ?? []
               rows.push(`
                 <tr class="reportRowPun">
                   <td class="reportNumPun">${numPun}</td>
                   <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
-                  <td class="reportIndent2">${pun.Apellido}, ${pun.Nombre}</td>
+                  <td class="reportIndent2">
+                    ${pun.Apellido}, ${pun.Nombre}
+                    <div class="reportInlineSummary">Votantes: ${votantesPreviewByPuntero.length}</div>
+                  </td>
                   <td>${pun.DNI}</td>
-                  <td>${pun.Telefono ?? '—'}</td>
-                  <td>${pun.EscuelaNombre ?? '—'}</td>
-                  <td>${pun.NroMesa ?? '—'}</td>
+                  <td>${pun.Telefono ?? emptyValue}</td>
+                  <td>${pun.EscuelaNombre ?? emptyValue}</td>
+                  <td>${pun.NroMesa ?? emptyValue}</td>
                 </tr>`)
 
-              const votantes = votantesByLider.get(pun.Id) ?? []
+              const votantes = votantesPreviewByPuntero
               groupVotantes += votantes.length
               if (votantes.length === 0) {
                 rows.push(`
-                  <tr class="reportRowEmpty">
-                    <td class="reportNumEmpty">${numPun}.—</td>
-                    <td><span class="roleBadge roleBadge--votante">Votante</span></td>
-                    <td class="reportIndent3"><em>Sin votantes</em></td>
-                    <td>—</td><td>—</td><td>—</td><td>—</td>
+                  <tr class="reportRowEmpty reportRowEmpty--votantes">
+                    <td class="reportNumEmpty"></td>
+                    <td></td>
+                    <td class="reportIndent3"><span class="reportInfoTag"><em>Sin votantes asignados</em></span></td>
+                    <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
                   </tr>`)
               } else {
                 votantes.forEach((vot, vk) => {
@@ -1239,14 +1409,16 @@ export default function PersonasPage(): React.JSX.Element {
                       <td class="reportRolVot"><span class="roleBadge roleBadge--votante">Votante</span></td>
                       <td class="reportIndent3">${vot.Apellido}, ${vot.Nombre}</td>
                       <td>${vot.DNI}</td>
-                      <td>${vot.Telefono ?? '—'}</td>
-                      <td>${vot.EscuelaNombre ?? '—'}</td>
-                      <td>${vot.NroMesa ?? '—'}</td>
+                      <td>${vot.Telefono ?? emptyValue}</td>
+                      <td>${vot.EscuelaNombre ?? emptyValue}</td>
+                      <td>${vot.NroMesa ?? emptyValue}</td>
                     </tr>`)
                 })
               }
+              rows.push('<tr class="reportJerarquiaSpacerPun"><td colspan="7"></td></tr>')
             })
           }
+          rows.push('<tr class="reportJerarquiaSpacerRef"><td colspan="7"></td></tr>')
         })
       }
 
@@ -1257,9 +1429,15 @@ export default function PersonasPage(): React.JSX.Element {
         <tr class="reportSubTotalRow">
           <td></td>
           <td></td>
-          <td><strong>Subtotal Referentes: ${groupReferentes} | Punteros: ${groupPunteros} | Votantes: ${groupVotantes}</strong></td>
-          <td>—</td><td>—</td><td>—</td><td>—</td>
+          <td colspan="5" class="reportJerarquiaFootWide">
+            <strong class="reportJerarquiaFoot">
+              <span class="reportJerarquiaFootLabel">Subtotal del grupo</span>
+              <span class="roleBadge roleBadge--grupo">${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</span>
+              <span class="reportJerarquiaFootCounts">: ${groupReferentes} referentes | ${groupPunteros} punteros | ${groupVotantes} votantes</span>
+            </strong>
+          </td>
         </tr>`)
+      rows.push('<tr class="reportBlankRow"><td colspan="7"></td></tr>')
 
       if (gi < grupos.length - 1) {
         rows.push('<tr class="reportJerarquiaSpacer"><td colspan="7"></td></tr>')
@@ -1276,54 +1454,132 @@ export default function PersonasPage(): React.JSX.Element {
           <title>Reporte - Jerarquía Referentes / Punteros / Votantes</title>
           <style>
             @page { size: A4 landscape; margin: 12mm; }
-            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
-            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #dbe3ea; }
             .headerLeft { display: flex; flex-direction: column; }
-            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
-            .meta { color: #555; font-size: 13px; }
-            .metaLine { margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-            th { background: #f3f4f6; }
-            tr.reportRowGroup { background: #dbeafe; font-weight: 900; }
-            tr.reportRowRef { background: #e5e7eb; font-weight: bold; }
-            tr.reportRowPun { background: #f9fafb; }
-            tr.reportRowVot { background: #fff; }
-            tr.reportRowEmpty { background: #fff; color: #6b7280; }
-            tr.reportSubTotalRow { background: #f3f4f6; font-weight: 800; }
-            tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
-            tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
+            h1 { font-size: 26px; margin: 0; letter-spacing: 0.01em; font-weight: 800; }
+            .meta { color: #475569; font-size: 12px; text-align: right; line-height: 1.4; }
+            .metaLine { margin-top: 4px; color: #64748b; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 9px 10px; text-align: left; vertical-align: middle; }
+            th { background: #f8fafc; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #334155; font-weight: 700; }
+            th:nth-child(1), td:nth-child(1) { width: 8%; }
+            th:nth-child(2), td:nth-child(2) { width: 10%; }
+            th:nth-child(3), td:nth-child(3) { width: 30%; }
+            th:nth-child(4), td:nth-child(4) { width: 12%; white-space: nowrap; }
+            th:nth-child(5), td:nth-child(5) { width: 14%; white-space: nowrap; }
+            th:nth-child(6), td:nth-child(6) { width: 18%; }
+            th:nth-child(7), td:nth-child(7) { width: 8%; white-space: nowrap; }
+            tr.reportRowGroup { background: #eaf1f8; font-weight: 850; }
+            tr.reportRowRef { background: #f5f8fc; font-weight: 720; }
+            tr.reportRowPun { background: #fcfdff; color: #1f2937; }
+            tr.reportRowVot { background: #ffffff; color: #334155; }
+            tr.reportRowVot td { font-size: 11.5px; }
+            tr.reportRowVot td.reportIndent3 { color: #475569; }
+            tr.reportRowEmpty { background: #fafbfc; color: #9ca3af; }
+            tr.reportRowEmpty td { font-size: 11.5px; }
+            tr.reportRowEmpty--punteros td,
+            tr.reportRowEmpty--votantes td { background: #fafbfc; color: #9ca3af; }
+            tr.reportSubTotalRow { background: #f8fafc; color: #1e293b; }
+            tr.reportSubTotalRow td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; padding-top: 10px; padding-bottom: 10px; }
+            tr.reportGrandTotalRow { background: #e8ecf1; color: #0f172a; }
+            tr.reportGrandTotalRow td { border-top: 2px solid #94a3b8; padding-top: 11px; padding-bottom: 11px; }
+            td.reportJerarquiaFootWide { white-space: nowrap; }
+            tr.reportBlankRow td { border: none; height: 10px; background: #fff; }
             td.reportNumGroup { padding-left: 8px; }
             td.reportNumRef { padding-left: 18px; }
             td.reportNumPun { padding-left: 36px; }
             td.reportNumVot { padding-left: 56px; }
-            td.reportNumEmpty { padding-left: 56px; color: #6b7280; }
+            td.reportNumEmpty { padding-left: 56px; color: #94a3b8; }
             td.reportRolVot { padding-left: 24px; }
             td.reportIndent1 { padding-left: 18px; }
             td.reportIndent2 { padding-left: 36px; }
             td.reportIndent3 { padding-left: 52px; }
+            .reportInlineSummary {
+              margin-top: 1px;
+              font-size: 9.75px;
+              color: #94a3b8;
+              font-weight: 400;
+              letter-spacing: 0.01em;
+              line-height: 1.35;
+            }
+            .reportInfoTag {
+              display: inline-block;
+              background: transparent;
+              border: 1px solid #eef1f4;
+              border-radius: 4px;
+              padding: 2px 8px;
+              color: #9ca3af;
+              font-size: 10px;
+              font-weight: 400;
+              line-height: 1.35;
+            }
+            tr.reportRowEmpty .reportInfoTag em {
+              font-style: normal;
+              font-weight: 500;
+              color: #94a3af;
+            }
+            tr.reportRowEmpty--referentes .reportInfoTag,
+            tr.reportRowEmpty--punteros .reportInfoTag,
+            tr.reportRowEmpty--votantes .reportInfoTag {
+              background: #f9fafb;
+              border-color: #eef0f3;
+              color: #9ca3af;
+            }
+            .reportJerarquiaFoot { display: inline; font-weight: inherit; }
+            .reportJerarquiaFootLabel {
+              font-weight: 800;
+              color: #0f172a;
+              letter-spacing: 0.01em;
+            }
+            .reportJerarquiaFoot .roleBadge { margin: 0 4px 0 2px; vertical-align: middle; }
+            .reportJerarquiaFootCounts {
+              font-weight: 600;
+              color: #475569;
+              letter-spacing: 0;
+            }
+            tr.reportGrandTotalRow .reportJerarquiaFootLabel { color: #0f172a; font-weight: 850; }
+            tr.reportGrandTotalRow .reportJerarquiaFootCounts { color: #334155; font-weight: 650; }
+            .reportEmptyValue { color: #94a3b8; font-size: 11px; }
             /* Role badges (consistent with UI) */
             .roleBadge {
               display: inline-flex;
               align-items: center;
               justify-content: center;
-              padding: 2px 10px;
+              padding: 2px 8px;
               border-radius: 999px;
-              font-size: 11px;
-              font-weight: 800;
+              font-size: 10px;
+              font-weight: 700;
               line-height: 1.2;
               border: 1px solid transparent;
               white-space: nowrap;
             }
-            .roleBadge--grupo { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
-            .roleBadge--referente { background: #dcfce7; color: #15803d; border-color: #bbf7d0; font-weight: 750; }
-            .roleBadge--puntero { background: #fef3c7; color: #b45309; border-color: #fde68a; font-weight: 700; }
-            .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
+            .roleBadge--grupo { background: #e8f0ff; color: #1e40af; border-color: #c7d7fe; }
+            .roleBadge--referente { background: #e8f8ee; color: #166534; border-color: #c9edd8; font-weight: 700; }
+            .roleBadge--puntero { background: #fef7df; color: #a16207; border-color: #fce9b8; font-weight: 700; }
+            .roleBadge--votante { background: #f6f7f9; color: #334155; border-color: #e2e8f0; font-weight: 650; }
             .roleName--grupo { font-weight: 850; }
             .roleName--referente { font-weight: 750; }
             .roleName--puntero { font-weight: 650; }
             .roleName--votante { font-weight: 550; }
-            tr.reportJerarquiaSpacer td { height: 14px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+            tr.reportJerarquiaSpacer td { height: 10px; border: none; background: #fff; padding-top: 4px; padding-bottom: 4px; }
+            tr.reportJerarquiaSpacerRef td {
+              border: none !important;
+              border-top: 1px solid #e8eaed !important;
+              background: #fff;
+              padding: 10px 10px 12px;
+              line-height: 0;
+              font-size: 0;
+              vertical-align: middle;
+            }
+            tr.reportJerarquiaSpacerPun td {
+              border: none !important;
+              background: #fff;
+              padding: 5px 10px 6px;
+              line-height: 0;
+              font-size: 0;
+              vertical-align: middle;
+            }
           </style>
         </head>
         <body>
@@ -1350,7 +1606,7 @@ export default function PersonasPage(): React.JSX.Element {
               <tr>
                 <th>Nº</th>
                 <th>Rol</th>
-                <th>Apellido/s y Nombre/s</th>
+                <th>Apellido y Nombre</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
                 <th>Escuela</th>
@@ -1359,12 +1615,15 @@ export default function PersonasPage(): React.JSX.Element {
             </thead>
             <tbody>
               ${rowsHtml}
-              <tr class="reportBlankRow"><td colspan="7"></td></tr>
               <tr class="reportGrandTotalRow">
                 <td></td>
                 <td></td>
-                <td><strong>TOTAL Referentes: ${totalReferentes} | Punteros: ${totalPunteros} | Votantes: ${totalVotantes}</strong></td>
-                <td>—</td><td>—</td><td>—</td><td>—</td>
+                <td colspan="5" class="reportJerarquiaFootWide">
+                  <strong class="reportJerarquiaFoot">
+                    <span class="reportJerarquiaFootLabel">Total general</span>
+                    <span class="reportJerarquiaFootCounts">: ${totalReferentes} referentes | ${totalPunteros} punteros | ${totalVotantes} votantes</span>
+                  </strong>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1492,6 +1751,7 @@ export default function PersonasPage(): React.JSX.Element {
     })
     punterosByReferente.forEach((arr) => arr.sort(sortByApellidoNombre))
 
+    const emptyValue = '<span class="reportEmptyValue">-</span>'
     const rows: string[] = []
     let totalReferentes = 0
     let totalPunteros = 0
@@ -1503,9 +1763,9 @@ export default function PersonasPage(): React.JSX.Element {
           <td><span class="roleBadge roleBadge--grupo">Grupo</span></td>
           <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
           <td>${g.DNI}</td>
-          <td>—</td>
-          <td>—</td>
-          <td>—</td>
+          <td>${emptyValue}</td>
+          <td>${emptyValue}</td>
+          <td>${emptyValue}</td>
         </tr>`)
 
       const refs = referentesByGrupo.get(g.Id) ?? []
@@ -1513,49 +1773,54 @@ export default function PersonasPage(): React.JSX.Element {
       let groupPunteros = 0
       if (refs.length === 0) {
         rows.push(`
-          <tr class="reportEmptyRow">
+          <tr class="reportInfoRow">
             <td></td>
-            <td><span class="roleBadge roleBadge--referente">Referente</span></td>
-            <td class="reportIndent1"><em>Sin referentes</em></td>
-            <td>—</td><td>—</td><td>—</td><td>—</td>
+            <td></td>
+            <td class="reportIndent1"><span class="reportInfoTag"><em>Sin referentes asignados</em></span></td>
+            <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
           </tr>`)
       } else {
         refs.forEach((ref, ri) => {
           const punteros = punterosByReferente.get(ref.Id) ?? []
           groupPunteros += punteros.length
-          rows.push(`
-            <tr class="reportLeaderRow">
+          const refRows: string[] = []
+          refRows.push(`
+            <tr class="reportLeaderRow reportRefStartRow">
               <td class="reportNumRef">${gi + 1}.${ri + 1}</td>
               <td><span class="roleBadge roleBadge--referente">Referente</span></td>
               <td class="reportIndent1"><strong>${ref.Apellido.toUpperCase()}${ref.Nombre ? `, ${ref.Nombre}` : ''}</strong></td>
               <td>${ref.DNI}</td>
-              <td>${ref.Telefono ?? '—'}</td>
-              <td>${ref.EscuelaNombre ?? '—'}</td>
-              <td>${ref.NroMesa ?? '—'}</td>
+              <td>${ref.Telefono ?? emptyValue}</td>
+              <td>${ref.EscuelaNombre ?? emptyValue}</td>
+              <td>${ref.NroMesa ?? emptyValue}</td>
             </tr>`)
 
           if (punteros.length === 0) {
-            rows.push(`
-              <tr class="reportEmptyRow">
-                <td></td>
-                <td><span class="roleBadge roleBadge--puntero">Puntero</span></td>
-                <td class="reportIndent2"><em>Sin punteros</em></td>
-                <td>—</td><td>—</td><td>—</td><td>—</td>
+            refRows.push(`
+              <tr class="reportInfoRow reportInfoRow--punteros">
+                <td class="reportNumPun"></td>
+                <td class="reportRolPuntero"></td>
+                <td class="reportIndent3"><span class="reportInfoTag"><em>Sin punteros asignados</em></span></td>
+                <td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td><td>${emptyValue}</td>
               </tr>`)
           } else {
             punteros.forEach((p, pi) => {
-              rows.push(`
+              refRows.push(`
                 <tr class="reportSubRow">
                   <td class="reportNumPun">${gi + 1}.${ri + 1}.${pi + 1}</td>
                   <td class="reportRolPuntero"><span class="roleBadge roleBadge--puntero">Puntero</span></td>
-                  <td class="reportIndent2">${p.Apellido}, ${p.Nombre}</td>
+                  <td class="reportIndent3">${p.Apellido}, ${p.Nombre}</td>
                   <td>${p.DNI}</td>
-                  <td>${p.Telefono ?? '—'}</td>
-                  <td>${p.EscuelaNombre ?? '—'}</td>
-                  <td>${p.NroMesa ?? '—'}</td>
+                  <td>${p.Telefono ?? emptyValue}</td>
+                  <td>${p.EscuelaNombre ?? emptyValue}</td>
+                  <td>${p.NroMesa ?? emptyValue}</td>
                 </tr>`)
             })
           }
+          if (ri < refs.length - 1) {
+            refRows.push('<tr class="reportReferenteSpacer"><td colspan="7"></td></tr>')
+          }
+          rows.push(refRows.join(''))
         })
       }
 
@@ -1565,8 +1830,8 @@ export default function PersonasPage(): React.JSX.Element {
         <tr class="reportSubTotalRow">
           <td></td>
           <td></td>
-          <td><strong>Subtotal Referentes: ${groupReferentes} | Subtotal Punteros: ${groupPunteros}</strong></td>
-          <td>—</td><td>—</td><td>—</td><td>—</td>
+          <td><strong>Subtotal del grupo <span class="roleBadge roleBadge--grupo">${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</span>: ${groupReferentes} referentes | ${groupPunteros} punteros</strong></td>
+          <td></td><td></td><td></td><td></td>
         </tr>`)
 
       if (gi < grupos.length - 1) {
@@ -1574,6 +1839,7 @@ export default function PersonasPage(): React.JSX.Element {
       }
     })
 
+    // #region agent log
     agentLog({
       runId: 'pre-fix',
       hypothesisId: 'H22',
@@ -1581,6 +1847,32 @@ export default function PersonasPage(): React.JSX.Element {
       message: 'Building punteros report grouped by grupo then referente',
       data: { grupos: reportesGrupos.length, referentes: reportesReferentes.length, punteros: reportesPunteros.length },
     })
+    // #endregion
+    // #region agent log
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_PUNTEROS_EMPTY_STATES',
+      location: 'src/pages/personas/index.tsx:build-punteros-por-grupo-empty-states',
+      message: 'Computed empty states for punteros report',
+      data: {
+        gruposSinReferentes: grupos.filter((g) => (referentesByGrupo.get(g.Id) ?? []).length === 0).length,
+        referentesSinPunteros: referentes.filter((r) => (punterosByReferente.get(r.Id) ?? []).length === 0).length,
+      },
+    })
+    // #endregion
+    // #region agent log
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_PUNTEROS_VISUAL_REFINEMENT',
+      location: 'src/pages/personas/index.tsx:build-punteros-por-grupo-visual-refinement',
+      message: 'Applied visual refinement for referente blocks and puntero hierarchy',
+      data: {
+        referenteSpacerEnabled: true,
+        punteroIndentLevel: 3,
+        punteroInfoStateHighlight: true,
+      },
+    })
+    // #endregion
 
     return `
       <!DOCTYPE html>
@@ -1590,44 +1882,74 @@ export default function PersonasPage(): React.JSX.Element {
           <title>Reporte - Listado de punteros (por grupo)</title>
           <style>
             @page { size: A4 landscape; margin: 12mm; }
-            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
-            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
-            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
-            .meta { color: #555; font-size: 13px; }
-            .metaLine { margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
-            th { background: #f3f4f6; }
-            tr.reportGroupTopRow { background: #dbeafe; font-weight: 800; }
-            tr.reportLeaderRow { background: #e5e7eb; font-weight: 700; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid #dbe3ea; }
+            h1 { font-size: 26px; margin: 0; letter-spacing: 0.01em; font-weight: 800; }
+            .meta { color: #475569; font-size: 12px; text-align: right; line-height: 1.4; }
+            .metaLine { margin-top: 4px; color: #64748b; }
+            table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+            th, td { border-bottom: 1px solid #e5e7eb; padding: 9px 10px; text-align: left; vertical-align: middle; }
+            th { background: #f8fafc; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #334155; font-weight: 700; }
+            th:nth-child(1), td:nth-child(1) { width: 6%; }
+            th:nth-child(2), td:nth-child(2) { width: 8%; }
+            th:nth-child(3), td:nth-child(3) { width: 32%; }
+            th:nth-child(4), td:nth-child(4) { width: 11%; white-space: nowrap; }
+            th:nth-child(5), td:nth-child(5) { width: 14%; white-space: nowrap; }
+            th:nth-child(6), td:nth-child(6) { width: 20%; }
+            th:nth-child(7), td:nth-child(7) { width: 9%; white-space: nowrap; }
+            tr.reportGroupTopRow { background: #eaf1f8; font-weight: 800; }
+            tr.reportLeaderRow { background: #f5f8fc; font-weight: 700; }
+            tr.reportRefStartRow td { border-top: 1px solid #dbe5ef; }
             tr.reportSubRow { background: #fff; }
-            tr.reportEmptyRow { background: #fff; color: #6b7280; }
-            tr.reportSubTotalRow { background: #f3f4f6; font-weight: 800; }
-            tr.reportGrandTotalRow { background: #e5e7eb; font-weight: 900; }
+            tr.reportSubRow:nth-child(odd) { background: #fcfdff; }
+            tr.reportInfoRow { background: #f8fafc; color: #64748b; }
+            tr.reportInfoRow td { padding-top: 6px; padding-bottom: 6px; }
+            tr.reportInfoRow--punteros td { background: #f8fafc; color: #475569; font-style: italic; }
+            tr.reportInfoRow td:nth-child(4),
+            tr.reportInfoRow td:nth-child(5),
+            tr.reportInfoRow td:nth-child(6),
+            tr.reportInfoRow td:nth-child(7) { color: #cbd5e1; }
+            .reportInfoTag {
+              display: inline-block;
+              background: #f1f5f9;
+              border: 1px solid #e2e8f0;
+              border-radius: 999px;
+              padding: 2px 10px;
+              color: #475569;
+              font-size: 11px;
+              line-height: 1.2;
+            }
+            tr.reportSubTotalRow { background: #f8fafc; font-weight: 800; color: #1f2937; }
+            tr.reportSubTotalRow td { border-top: 1px solid #e2e8f0; border-bottom: 1px solid #dbe3ea; }
+            tr.reportGrandTotalRow { background: #e2e8f0; font-weight: 900; }
+            tr.reportGrandTotalRow td { border-top: 2px solid #94a3b8; }
             tr.reportBlankRow td { border: none; height: 12px; background: #fff; }
             td.reportRolPuntero { padding-left: 24px; }
             td.reportIndent1 { padding-left: 18px; }
             td.reportIndent2 { padding-left: 36px; }
+            td.reportIndent3 { padding-left: 52px; }
             td.reportNumGroup { padding-left: 8px; }
             td.reportNumRef { padding-left: 18px; }
-            td.reportNumPun { padding-left: 36px; }
-            tr.reportGroupSpacer td { height: 12px; border: none; border-left: 1px solid #ccc; border-right: 1px solid #ccc; background: #fff; }
+            td.reportNumPun { padding-left: 52px; color: #64748b; }
+            tr.reportReferenteSpacer td { height: 8px; border: none; background: #fff; }
+            tr.reportGroupSpacer td { height: 14px; border: none; background: #fff; }
+            .reportEmptyValue { color: #94a3b8; font-size: 11px; }
             /* Role badges (consistent with UI) */
             .roleBadge {
               display: inline-flex;
               align-items: center;
               justify-content: center;
-              padding: 2px 10px;
+              padding: 2px 8px;
               border-radius: 999px;
-              font-size: 11px;
-              font-weight: 800;
+              font-size: 10px;
+              font-weight: 700;
               line-height: 1.2;
               border: 1px solid transparent;
               white-space: nowrap;
             }
-            .roleBadge--grupo { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
-            .roleBadge--referente { background: #dcfce7; color: #15803d; border-color: #bbf7d0; font-weight: 750; }
-            .roleBadge--puntero { background: #fef3c7; color: #b45309; border-color: #fde68a; font-weight: 700; }
+            .roleBadge--grupo { background: #e8f0ff; color: #1e40af; border-color: #c7d7fe; }
+            .roleBadge--referente { background: #e8f8ee; color: #166534; border-color: #c9edd8; font-weight: 700; }
+            .roleBadge--puntero { background: #fef7df; color: #a16207; border-color: #fce9b8; font-weight: 700; }
             .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
           </style>
         </head>
@@ -1640,11 +1962,20 @@ export default function PersonasPage(): React.JSX.Element {
             </div>
           </div>
           <table>
+            <colgroup>
+              <col style="width:6%">
+              <col style="width:8%">
+              <col style="width:32%">
+              <col style="width:11%">
+              <col style="width:14%">
+              <col style="width:20%">
+              <col style="width:9%">
+            </colgroup>
             <thead>
               <tr>
                 <th>Nº</th>
                 <th>Rol</th>
-                <th>Apellido/s y Nombre/s</th>
+                <th>Apellido y Nombre</th>
                 <th>DNI</th>
                 <th>Teléfono</th>
                 <th>Escuela</th>
@@ -1657,8 +1988,8 @@ export default function PersonasPage(): React.JSX.Element {
               <tr class="reportGrandTotalRow">
                 <td></td>
                 <td></td>
-                <td><strong>TOTAL Referentes: ${totalReferentes} | TOTAL Punteros: ${totalPunteros}</strong></td>
-                <td>—</td><td>—</td><td>—</td><td>—</td>
+                <td><strong>TOTAL GENERAL: ${totalReferentes} referentes | ${totalPunteros} punteros</strong></td>
+                <td></td><td></td><td></td><td></td>
               </tr>
             </tbody>
           </table>
@@ -1829,6 +2160,230 @@ export default function PersonasPage(): React.JSX.Element {
       return
     }
     printVotantesDePuntero()
+  }
+
+  function buildPersonasPorEscuelaMesaReportHtml(): string {
+    const now = new Date()
+    const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
+
+    const scopeLine = reportesEscuelaNombre
+      ? reportesMesaNro
+        ? `Escuela: ${reportesEscuelaNombre} | Mesa: ${reportesMesaNro}`
+        : `Escuela: ${reportesEscuelaNombre} | Mesa: Todas`
+      : 'Escuela: Todas | Mesa: Todas'
+
+    const roleLabel = (rol: PersonRole): string => {
+      if (rol === 1) return 'Grupo'
+      if (rol === 2) return 'Referente'
+      if (rol === 3) return 'Puntero'
+      if (rol === 4) return 'Votante'
+      return 'Persona'
+    }
+
+    const roleBadgeClass = (rol: PersonRole): string => {
+      if (rol === 1) return 'roleBadge--grupo'
+      if (rol === 2) return 'roleBadge--referente'
+      if (rol === 3) return 'roleBadge--puntero'
+      return 'roleBadge--votante'
+    }
+
+    const rowsHtml = (() => {
+      if (reportesEscuelaNombre) {
+        return reportesPersonasByEscuelaMesa
+          .map(
+            (p, idx) => `
+              <tr>
+                <td>${idx + 1}</td>
+                <td><span class="roleBadge ${roleBadgeClass(p.Rol)}">${roleLabel(p.Rol)}</span></td>
+                <td>${p.Apellido}, ${p.Nombre}</td>
+                <td>${p.DNI}</td>
+                <td>${p.Telefono ?? '—'}</td>
+                <td>${p.EscuelaNombre ?? '—'}</td>
+                <td>${p.NroMesa ?? '—'}</td>
+              </tr>`
+          )
+          .join('')
+      }
+
+      const personasConEscuela = reportesPersonasByEscuelaMesa.filter((p) => (p.EscuelaNombre ?? '').trim().length > 0)
+      const personasSinEscuela = reportesPersonasByEscuelaMesa.filter((p) => (p.EscuelaNombre ?? '').trim().length === 0)
+      const byEscuela = new Map<string, PersonaResponseDTO[]>()
+      personasConEscuela.forEach((p) => {
+        const key = (p.EscuelaNombre ?? '').trim()
+        if (!byEscuela.has(key)) byEscuela.set(key, [])
+        byEscuela.get(key)!.push(p)
+      })
+      const escuelas = Array.from(byEscuela.keys()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+      let globalIndex = 1
+
+      const blocks = escuelas
+        .map((escuela) => {
+          const rows = byEscuela.get(escuela) ?? []
+          const body = rows
+            .map((p) => {
+              const rowHtml = `
+                <tr>
+                  <td>${globalIndex}</td>
+                  <td><span class="roleBadge ${roleBadgeClass(p.Rol)}">${roleLabel(p.Rol)}</span></td>
+                  <td>${p.Apellido}, ${p.Nombre}</td>
+                  <td>${p.DNI}</td>
+                  <td>${p.Telefono ?? '—'}</td>
+                  <td>${p.EscuelaNombre ?? '—'}</td>
+                  <td>${p.NroMesa ?? '—'}</td>
+                </tr>`
+              globalIndex += 1
+              return rowHtml
+            })
+            .join('')
+          const totalPersonasEscuela = rows.length
+          return `
+            <tr class="schoolGroupRow"><td colspan="7">Escuela: ${escuela}</td></tr>
+            ${body}
+            <tr class="schoolTotalRow"><td colspan="7">TOTAL de personas (${escuela}): ${totalPersonasEscuela}</td></tr>
+            <tr class="schoolSpacerRow"><td colspan="7"></td></tr>
+          `
+        })
+        .join('')
+
+      if (personasSinEscuela.length === 0) return blocks
+      const sinEscuelaRows = personasSinEscuela
+        .map((p) => {
+          const rowHtml = `
+            <tr>
+              <td>${globalIndex}</td>
+              <td><span class="roleBadge ${roleBadgeClass(p.Rol)}">${roleLabel(p.Rol)}</span></td>
+              <td>${p.Apellido}, ${p.Nombre}</td>
+              <td>${p.DNI}</td>
+              <td>${p.Telefono ?? '—'}</td>
+              <td>—</td>
+              <td>${p.NroMesa ?? '—'}</td>
+            </tr>`
+          globalIndex += 1
+          return rowHtml
+        })
+        .join('')
+      const totalPersonasSinEscuela = personasSinEscuela.length
+      return `${blocks}
+        <tr class="schoolGroupRow"><td colspan="7">Escuela: Sin escuela</td></tr>
+        ${sinEscuelaRows}
+        <tr class="schoolTotalRow"><td colspan="7">TOTAL de personas (Sin escuela): ${totalPersonasSinEscuela}</td></tr>
+      `
+    })()
+
+    return `
+      <!DOCTYPE html>
+      <html lang="es">
+        <head>
+          <meta charSet="utf-8" />
+          <title>Reporte - Personas por escuela y mesa</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; }
+            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            h1 { font-size: 22px; margin: 0; letter-spacing: 0.02em; }
+            .meta { color: #555; font-size: 13px; }
+            .metaLine { margin-top: 4px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+            th { background: #f3f4f6; }
+            .roleBadge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              padding: 2px 10px;
+              border-radius: 999px;
+              font-size: 11px;
+              font-weight: 800;
+              line-height: 1.2;
+              border: 1px solid transparent;
+              white-space: nowrap;
+            }
+            .roleBadge--grupo { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+            .roleBadge--referente { background: #dcfce7; color: #15803d; border-color: #bbf7d0; font-weight: 750; }
+            .roleBadge--puntero { background: #fef3c7; color: #b45309; border-color: #fde68a; font-weight: 700; }
+            .roleBadge--votante { background: #f3f4f6; color: #374151; border-color: #e5e7eb; font-weight: 650; }
+            .schoolGroupRow td { background: #eef2ff; font-weight: 700; }
+            .schoolTotalRow td { background: #f8fafc; font-weight: 700; }
+            .schoolSpacerRow td { border: none; height: 12px; padding: 0; background: transparent; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>PERSONAS POR ESCUELA / MESA</h1>
+            <div class="meta">
+              <div>Fecha: ${formattedDate}</div>
+              <div class="metaLine">${scopeLine}</div>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Nº</th>
+                <th>Rol</th>
+                <th>Apellido/s y Nombre/s</th>
+                <th>DNI</th>
+                <th>Teléfono</th>
+                <th>Escuela</th>
+                <th>Mesa</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `
+  }
+
+  function viewPersonasPorEscuelaMesaReport() {
+    // #region agent log
+    agentLog({
+      runId: 'post-fix',
+      hypothesisId: 'H_ESCUELA_MESA_VIEW',
+      location: 'src/pages/personas/index.tsx:view-escuela-mesa-report',
+      message: 'View report by escuela/mesa',
+      data: {
+        escuela: reportesEscuelaNombre || 'TODAS',
+        mesa: reportesMesaNro || 'TODAS',
+        rows: reportesPersonasByEscuelaMesa.length,
+        groupedByEscuela: reportesEscuelaNombre === '',
+      },
+    })
+    // #endregion
+    if (reportesPersonasByEscuelaMesa.length === 0) {
+      window.alert('No hay personas para mostrar con ese filtro.')
+      return
+    }
+    openReportWindow(buildPersonasPorEscuelaMesaReportHtml())
+  }
+
+  function printPersonasPorEscuelaMesaReport() {
+    // #region agent log
+    agentLog({
+      runId: 'post-fix',
+      hypothesisId: 'H_ESCUELA_MESA_PRINT',
+      location: 'src/pages/personas/index.tsx:print-escuela-mesa-report',
+      message: 'Print report by escuela/mesa',
+      data: {
+        escuela: reportesEscuelaNombre || 'TODAS',
+        mesa: reportesMesaNro || 'TODAS',
+        rows: reportesPersonasByEscuelaMesa.length,
+        groupedByEscuela: reportesEscuelaNombre === '',
+      },
+    })
+    // #endregion
+    if (reportesPersonasByEscuelaMesa.length === 0) {
+      window.alert('No hay personas para imprimir con ese filtro.')
+      return
+    }
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.open()
+    w.document.write(buildPersonasPorEscuelaMesaReportHtml())
+    w.document.close()
+    w.focus()
+    w.print()
   }
 
   function buildCantidadesTotalesReportHtml(): string {
@@ -2167,10 +2722,29 @@ export default function PersonasPage(): React.JSX.Element {
     const grupo = reportesGrupos.find((g) => g.Id === reportesGrupoId) ?? null
     const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
     const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
+    const groupIdsWithRefs = new Set(reportesReferentes.map((r) => r.LiderId).filter((id): id is number => id != null))
+    const gruposSinReferentes = reportesGrupos.filter((g) => !groupIdsWithRefs.has(g.Id))
+    const allLeadersForReport = grupo ? [grupo, ...gruposSinReferentes.filter((g) => g.Id !== grupo.Id)] : gruposSinReferentes
+    // #region agent log
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_REF_LIST_VIEW_INPUTS',
+      location: 'src/pages/personas/index.tsx:viewReferentesDeGrupo',
+      message: 'Preparing referentes report for selected group',
+      data: {
+        selectedGroupId: reportesGrupoId,
+        selectedGroupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : null,
+        refsForSelectedGroup: list.length,
+        totalGroups: reportesGrupos.length,
+        totalReferentes: reportesReferentes.length,
+        addedEmptyGroups: gruposSinReferentes.length,
+      },
+    })
+    // #endregion
     openReportWindow(
       buildReportHtml(2, list, leaderById, {
         groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : '—',
-        allLeaders: grupo ? [grupo] : undefined,
+        allLeaders: allLeadersForReport,
         headerPathLine: grupo ? `Grupo: ${grupo.Apellido}, ${grupo.Nombre}` : 'Grupo: Todos',
       })
     )
@@ -2181,13 +2755,32 @@ export default function PersonasPage(): React.JSX.Element {
     const grupo = reportesGrupos.find((g) => g.Id === reportesGrupoId) ?? null
     const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
     const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
+    const groupIdsWithRefs = new Set(reportesReferentes.map((r) => r.LiderId).filter((id): id is number => id != null))
+    const gruposSinReferentes = reportesGrupos.filter((g) => !groupIdsWithRefs.has(g.Id))
+    const allLeadersForReport = grupo ? [grupo, ...gruposSinReferentes.filter((g) => g.Id !== grupo.Id)] : gruposSinReferentes
+    // #region agent log
+    agentLog({
+      runId: 'pre-fix',
+      hypothesisId: 'H_REF_LIST_PRINT_INPUTS',
+      location: 'src/pages/personas/index.tsx:printReferentesDeGrupo',
+      message: 'Preparing referentes report print for selected group',
+      data: {
+        selectedGroupId: reportesGrupoId,
+        selectedGroupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : null,
+        refsForSelectedGroup: list.length,
+        totalGroups: reportesGrupos.length,
+        totalReferentes: reportesReferentes.length,
+        addedEmptyGroups: gruposSinReferentes.length,
+      },
+    })
+    // #endregion
     const w = window.open('', '_blank')
     if (!w) return
     w.document.open()
     w.document.write(
       buildReportHtml(2, list, leaderById, {
         groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : '—',
-        allLeaders: grupo ? [grupo] : undefined,
+        allLeaders: allLeadersForReport,
         headerPathLine: grupo ? `Grupo: ${grupo.Apellido}, ${grupo.Nombre}` : 'Grupo: Todos',
       })
     )
@@ -2266,7 +2859,16 @@ export default function PersonasPage(): React.JSX.Element {
       fetchReportesData()
         .then(({ grupos, referentes }) => {
           const leaderById = new Map(grupos.map((g) => [g.Id, g]))
-          openReportWindow(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios' }))
+          // #region agent log
+          agentLog({
+            runId: 'post-fix',
+            hypothesisId: 'H_REF_TAB_VIEW_ALL_GROUPS',
+            location: 'src/pages/personas/index.tsx:handleViewReport-referentes',
+            message: 'Building referentes report from Referentes tab with all groups',
+            data: { grupos: grupos.length, referentes: referentes.length },
+          })
+          // #endregion
+          openReportWindow(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios', allLeaders: grupos }))
         })
         .catch(() => window.alert('No se pudo generar el reporte.'))
       return
@@ -2388,8 +2990,17 @@ export default function PersonasPage(): React.JSX.Element {
           const leaderById = new Map(grupos.map((g) => [g.Id, g]))
           const w = window.open('', '_blank')
           if (!w) return
+          // #region agent log
+          agentLog({
+            runId: 'post-fix',
+            hypothesisId: 'H_REF_TAB_PRINT_ALL_GROUPS',
+            location: 'src/pages/personas/index.tsx:handlePrintReport-referentes',
+            message: 'Printing referentes report from Referentes tab with all groups',
+            data: { grupos: grupos.length, referentes: referentes.length },
+          })
+          // #endregion
           w.document.open()
-          w.document.write(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios' }))
+          w.document.write(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios', allLeaders: grupos }))
           w.document.close()
           w.focus()
           w.print()
@@ -3563,6 +4174,110 @@ export default function PersonasPage(): React.JSX.Element {
                         className="personasButton personasButtonSecondary reportesActionButtonWithText"
                         onClick={printCantidadesTotalesReport}
                         disabled={cantidadesTotalesRows.length === 0}
+                        title="Imprimir reporte"
+                        aria-label="Imprimir reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M6 9V3h12v6" />
+                          <path d="M6 17v4h12v-4" />
+                          <path d="M6 13h12a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3H6a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3z" />
+                          <path d="M9 17h6" />
+                        </svg>
+                        <span className="reportesActionLabel">Imprimir reporte</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="reportesRow reportesRowBottom">
+                  <div className="reportesListadoCard reportesListadoCardFiltros">
+                    <span className="reportesListadoCardLabel">Reporte por escuela y mesa</span>
+                    <div className="reportesFilters reportesFiltersEscuelaMesa">
+                      <label className="reportesFilter">
+                        <span>Escuela</span>
+                        <select
+                          className="personasInput"
+                          value={reportesEscuelaNombre}
+                          onChange={(e) => {
+                            const escuela = e.target.value
+                            setReportesEscuelaNombre(escuela)
+                            setReportesMesaNro('')
+                            // #region agent log
+                            agentLog({
+                              runId: 'post-fix',
+                              hypothesisId: 'H_ESCUELA_FILTER_CHANGE',
+                              location: 'src/pages/personas/index.tsx:select-escuela-report',
+                              message: 'Escuela filter changed in report by escuela/mesa',
+                              data: { escuela: escuela || 'TODAS' },
+                            })
+                            // #endregion
+                          }}
+                        >
+                          <option value="">Todas las escuelas</option>
+                          {reportesEscuelasOptions.map((escuela) => (
+                            <option key={`reportes-escuela-${escuela}`} value={escuela}>
+                              {escuela}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="reportesFilter">
+                        <span>Mesa</span>
+                        <select
+                          className="personasInput"
+                          value={reportesMesaNro}
+                          disabled={!reportesEscuelaNombre}
+                          onChange={(e) => {
+                            const mesa = e.target.value
+                            setReportesMesaNro(mesa)
+                            // #region agent log
+                            agentLog({
+                              runId: 'post-fix',
+                              hypothesisId: 'H_MESA_FILTER_CHANGE',
+                              location: 'src/pages/personas/index.tsx:select-mesa-report',
+                              message: 'Mesa filter changed in report by escuela/mesa',
+                              data: { escuela: reportesEscuelaNombre || 'TODAS', mesa: mesa || 'TODAS' },
+                            })
+                            // #endregion
+                          }}
+                        >
+                          <option value="">{reportesEscuelaNombre ? 'Todas las mesas' : 'Primero seleccioná una escuela'}</option>
+                          {reportesMesasOptions.map((mesa) => (
+                            <option key={`reportes-mesa-${mesa}`} value={mesa}>
+                              Mesa {mesa}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="reportesHierarchySummary">
+                      {(() => {
+                        const escuelaTxt = reportesEscuelaNombre || 'Todas las escuelas'
+                        const mesaTxt = reportesMesaNro ? `Mesa ${reportesMesaNro}` : 'Todas las mesas'
+                        return `Se generará: Reporte de personas de ${escuelaTxt} (${mesaTxt})`
+                      })()}
+                    </div>
+                    <div className="reportesListadoCardActions">
+                      <button
+                        type="button"
+                        className="personasButton personasButtonPrimary reportesActionButtonWithText"
+                        onClick={viewPersonasPorEscuelaMesaReport}
+                        disabled={reportesPersonasByEscuelaMesa.length === 0}
+                        title="Ver reporte"
+                        aria-label="Ver reporte"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                        <span className="reportesActionLabel">Ver reporte</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="personasButton personasButtonSecondary reportesActionButtonWithText"
+                        onClick={printPersonasPorEscuelaMesaReport}
+                        disabled={reportesPersonasByEscuelaMesa.length === 0}
                         title="Imprimir reporte"
                         aria-label="Imprimir reporte"
                       >
