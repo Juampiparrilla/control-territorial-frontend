@@ -113,7 +113,7 @@ export default function UsersManagementModal({ open, onClose }: UsersManagementM
     setEditing(user)
     setFormMode('edit')
     setUsername(user.Username)
-    setRole(user.Role)
+    setRole(user.SystemRole)
     setIsActive(user.IsActive)
     setPersonaId(user.PersonaId ?? null)
   }
@@ -142,7 +142,7 @@ export default function UsersManagementModal({ open, onClose }: UsersManagementM
     const payload: CreateUserDTO = {
       Username: username.trim(),
       Password: password,
-      Role: role,
+      SystemRole: role,
       PersonaId: personaId,
       IsActive: isActive,
     }
@@ -171,7 +171,7 @@ export default function UsersManagementModal({ open, onClose }: UsersManagementM
 
     const payload: UpdateUserDTO = {
       Username: username.trim(),
-      Role: role,
+      SystemRole: role,
       PersonaId: personaId,
       IsActive: isActive,
     }
@@ -246,7 +246,7 @@ export default function UsersManagementModal({ open, onClose }: UsersManagementM
         (u) =>
           u.Username.toLowerCase().includes(q) ||
           personaDisplayName(u).toLowerCase().includes(q) ||
-          systemRoleLabel(u.Role).toLowerCase().includes(q),
+          systemRoleLabel(u.SystemRole).toLowerCase().includes(q),
       )
     : list
 
@@ -269,7 +269,9 @@ export default function UsersManagementModal({ open, onClose }: UsersManagementM
             <p className="personasAdminModalSubtitle">Accesos al sistema (JWT). No modifica personas territoriales.</p>
           </div>
           <button type="button" className="personasPadronClose" onClick={onClose} aria-label="Cerrar">
-            ×
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 20, height: 20 }}>
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
@@ -381,8 +383,8 @@ export default function UsersManagementModal({ open, onClose }: UsersManagementM
                         <td>{user.Username}</td>
                         <td>{personaDisplayName(user)}</td>
                         <td>
-                          <span className={`usersRoleBadge usersRoleBadge--${user.Role}`}>
-                            {systemRoleLabel(user.Role)}
+                          <span className={`usersRoleBadge usersRoleBadge--${user.SystemRole}`}>
+                            {systemRoleLabel(user.SystemRole)}
                           </span>
                         </td>
                         <td>
@@ -390,7 +392,7 @@ export default function UsersManagementModal({ open, onClose }: UsersManagementM
                             {user.IsActive ? 'Activo' : 'Inactivo'}
                           </span>
                         </td>
-                        <td>{user.CreatedAt ? new Date(user.CreatedAt).toLocaleDateString('es-AR') : '—'}</td>
+                        <td>{user.CreatedAt ? new Date(user.CreatedAt).toLocaleDateString('es-AR') : '-'}</td>
                         <td className="personasTableActions">
                           <button type="button" className="personasTableLink" onClick={() => openEdit(user)}>
                             Editar

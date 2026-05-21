@@ -1,15 +1,15 @@
 import { apiFetch, apiJson } from '../../../lib/apiClient'
 import type { CreateUserDTO, UpdateUserDTO, UserResponseDTO } from '../types'
 
-const ROLE_BY_NAME: Record<string, UserResponseDTO['Role']> = {
+const ROLE_BY_NAME: Record<string, UserResponseDTO['SystemRole']> = {
   AdminSistema: 1,
   Operador: 2,
   Supervisor: 3,
   Consulta: 4,
 }
 
-function parseSystemRole(raw: unknown): UserResponseDTO['Role'] {
-  if (typeof raw === 'number') return raw as UserResponseDTO['Role']
+function parseSystemRole(raw: unknown): UserResponseDTO['SystemRole'] {
+  if (typeof raw === 'number') return raw as UserResponseDTO['SystemRole']
   if (typeof raw === 'string' && ROLE_BY_NAME[raw]) return ROLE_BY_NAME[raw]
   return 2
 }
@@ -18,7 +18,7 @@ function mapUser(raw: Record<string, unknown>): UserResponseDTO {
   return {
     Id: Number(raw.id ?? raw.Id),
     Username: String(raw.username ?? raw.Username ?? ''),
-    Role: parseSystemRole(raw.role ?? raw.Role),
+    SystemRole: parseSystemRole(raw.systemRole ?? raw.SystemRole ?? raw.role ?? raw.Role),
     IsActive: Boolean(raw.isActive ?? raw.IsActive ?? true),
     PersonaId: (raw.personaId ?? raw.PersonaId) as number | null | undefined,
     PersonaNombre: (raw.personaNombre ?? raw.PersonaNombre) as string | null | undefined,

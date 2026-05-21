@@ -10,7 +10,7 @@ export const SYSTEM_ROLE_OPTIONS: Array<{ value: SystemRole; label: string }> = 
 export type UserResponseDTO = {
   Id: number
   Username: string
-  Role: SystemRole
+  SystemRole: SystemRole
   IsActive: boolean
   PersonaId?: number | null
   PersonaNombre?: string | null
@@ -23,14 +23,14 @@ export type UserResponseDTO = {
 export type CreateUserDTO = {
   Username: string
   Password: string
-  Role: SystemRole
+  SystemRole: SystemRole
   PersonaId?: number | null
   IsActive: boolean
 }
 
 export type UpdateUserDTO = {
   Username: string
-  Role: SystemRole
+  SystemRole: SystemRole
   PersonaId?: number | null
   IsActive: boolean
 }
