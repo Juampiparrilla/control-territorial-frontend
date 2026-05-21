@@ -4256,7 +4256,7 @@ export default function PersonasPage(): React.JSX.Element {
                     Todo el listado junto
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Un único reporte con la jerarquía completa (grupo â†’ referente â†’ puntero â†’ votante).
+                    Un único reporte con la jerarquía completa (grupo → referente → puntero → votante).
                   </p>
                   <button type="button" className="personasButton personasButtonSecondary" onClick={() => executeVotantesPrint('byPuntero')}>
                     Una sección por puntero
