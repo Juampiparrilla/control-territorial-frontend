@@ -1,7 +1,6 @@
 export type PersonRole = 0 | 1 | 2 | 3 | 4 | 5
 
 export const PERSON_ROLE_OPTIONS: Array<{ value: PersonRole; label: string }> = [
-  { value: 0, label: 'Administrador' },
   { value: 1, label: 'Grupo' },
   { value: 2, label: 'Referente' },
   { value: 3, label: 'Puntero' },

@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import {
   createPersona,
   deletePersona,
@@ -29,6 +29,7 @@ import {
   type PersonRole,
   type PadronUploadResultDTO,
 } from './type'
+import UsersManagementModal from '../../features/users/components/UsersManagementModal'
 import './styles.css'
 
 export default function PersonasPage(): React.JSX.Element {
@@ -73,18 +74,7 @@ export default function PersonasPage(): React.JSX.Element {
   const padronLastLookupDniRef = React.useRef<string>('')
   const [dniAutoFillLoading, setDniAutoFillLoading] = React.useState(false)
 
-  const [showAdminModal, setShowAdminModal] = React.useState(false)
-  const [adminList, setAdminList] = React.useState<PersonaResponseDTO[]>([])
-  const [adminListLoading, setAdminListLoading] = React.useState(false)
-  const [adminSearch, setAdminSearch] = React.useState('')
-  const [adminPage, setAdminPage] = React.useState(1)
-  const [adminPerPage, setAdminPerPage] = React.useState(10)
-  const [adminShowForm, setAdminShowForm] = React.useState(false)
-  const [adminEditingId, setAdminEditingId] = React.useState<number | null>(null)
-  const [adminForm, setAdminForm] = React.useState<CreatePersonaDTO>(() => emptyForm(0))
-  const [adminSubmitting, setAdminSubmitting] = React.useState(false)
-  const [adminError, setAdminError] = React.useState<string | null>(null)
-  const [adminSuccess, setAdminSuccess] = React.useState<string | null>(null)
+  const [showUsersModal, setShowUsersModal] = React.useState(false)
 
   const [showAppHelpModal, setShowAppHelpModal] = React.useState(false)
   const [showReportStructureInfoDrawer, setShowReportStructureInfoDrawer] = React.useState(false)
@@ -126,116 +116,12 @@ export default function PersonasPage(): React.JSX.Element {
     setShowPadronModal(false)
   }
 
-  const fetchAdmins = React.useCallback(() => {
-    setAdminListLoading(true)
-    getPersonasByRoleCached(0)
-      .then((res) => setAdminList(res))
-      .catch(() => setAdminList([]))
-      .finally(() => setAdminListLoading(false))
-  }, [])
-
-  function openAdminModal() {
-    setAdminError(null)
-    setAdminSuccess(null)
-    setAdminSearch('')
-    setAdminPage(1)
-    setAdminPerPage(10)
-    setAdminShowForm(false)
-    setAdminEditingId(null)
-    setAdminForm(emptyForm(0))
-    setShowAdminModal(true)
-    fetchAdmins()
-  }
-
-  function closeAdminModal() {
-    setShowAdminModal(false)
-  }
-
   function openAppHelpModal() {
     setShowAppHelpModal(true)
   }
 
   function closeAppHelpModal() {
     setShowAppHelpModal(false)
-  }
-
-  function openAdminCreate() {
-    setAdminError(null)
-    setAdminSuccess(null)
-    setAdminEditingId(null)
-    setAdminForm(emptyForm(0))
-    setAdminShowForm(true)
-  }
-
-  function openAdminEdit(row: PersonaResponseDTO) {
-    setAdminError(null)
-    setAdminSuccess(null)
-    setAdminEditingId(row.Id)
-    setAdminForm({
-      Nombre: row.Nombre ?? '',
-      Apellido: row.Apellido ?? '',
-      DNI: row.DNI ?? '',
-      Rol: 0,
-      Telefono: row.Telefono ?? '',
-      Escuela: row.EscuelaNombre ?? '',
-      Mesa: row.NroMesa != null ? String(row.NroMesa) : '',
-      LiderId: null,
-    })
-    setAdminShowForm(true)
-  }
-
-  async function handleAdminDelete(row: PersonaResponseDTO) {
-    try {
-      await deletePersona(row.Id)
-      invalidatePersonasByRoleCache()
-      setAdminSuccess('Administrador eliminado.')
-      fetchAdmins()
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Error al eliminar.'
-      setAdminError(msg)
-    }
-  }
-
-  async function handleAdminSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setAdminError(null)
-    setAdminSuccess(null)
-
-    const payload: CreatePersonaDTO = {
-      Nombre: sanitizeNombreApellido(adminForm.Nombre ?? ''),
-      Apellido: sanitizeNombreApellido(adminForm.Apellido ?? ''),
-      DNI: sanitizeDNI(adminForm.DNI ?? ''),
-      Rol: 0,
-      Telefono: normalizeOptionalString(adminForm.Telefono ?? ''),
-      Escuela: normalizeOptionalString(adminForm.Escuela ?? ''),
-      Mesa: normalizeOptionalString(adminForm.Mesa ?? ''),
-      LiderId: null,
-    }
-
-    if (!payload.Nombre.trim() || !payload.Apellido.trim() || !payload.DNI.trim()) {
-      setAdminError('Completá Nombre, Apellido y DNI.')
-      return
-    }
-
-    setAdminSubmitting(true)
-    try {
-      if (adminEditingId == null) {
-        await createPersona(payload)
-        setAdminSuccess('Administrador creado.')
-      } else {
-        await updatePersona(adminEditingId, payload)
-        setAdminSuccess('Administrador actualizado.')
-      }
-      setAdminShowForm(false)
-      setAdminEditingId(null)
-      invalidatePersonasByRoleCache()
-      fetchAdmins()
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error al guardar.'
-      setAdminError(msg)
-    } finally {
-      setAdminSubmitting(false)
-    }
   }
 
   async function handlePadronAutoFillByDni() {
@@ -268,7 +154,7 @@ export default function PersonasPage(): React.JSX.Element {
 
       padronLastLookupDniRef.current = dni
     } catch (e) {
-      // no-op: no queres bloquear la UX si el padrón no responde
+      // no-op: no queres bloquear la UX si el padrÃ³n no responde
     } finally {
       setDniAutoFillLoading(false)
     }
@@ -280,7 +166,7 @@ export default function PersonasPage(): React.JSX.Element {
     setPadronSyncError(null)
     setPadronSyncResult(null)
     if (!padronFile) {
-      setPadronUploadError('Seleccioná un archivo Excel (.xlsx).')
+      setPadronUploadError('SeleccionÃ¡ un archivo Excel (.xlsx).')
       return
     }
     setPadronUploadLoading(true)
@@ -289,7 +175,7 @@ export default function PersonasPage(): React.JSX.Element {
       setPadronUploadResult(res)
       setPadronStep(2)
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Error al cargar el padrón.'
+      const msg = e instanceof Error ? e.message : 'Error al cargar el padrÃ³n.'
       setPadronUploadError(msg)
     } finally {
       setPadronUploadLoading(false)
@@ -359,7 +245,7 @@ export default function PersonasPage(): React.JSX.Element {
   }, [tab.id])
 
   React.useEffect(() => {
-    // Reportes por selección: al entrar en Reportes, arrancar sin selección (placeholder)
+    // Reportes por selecciÃ³n: al entrar en Reportes, arrancar sin selecciÃ³n (placeholder)
     if (tab.id !== 'reportes') return
     setReportesGrupoId(null)
     setReportesReferenteId(null)
@@ -453,7 +339,7 @@ export default function PersonasPage(): React.JSX.Element {
         setReportesVotantes(vot)
         setReportesEscuelaNombre('')
         setReportesMesaNro('')
-        // No autoseleccionar en "Reportes por selección"
+        // No autoseleccionar en "Reportes por selecciÃ³n"
         setReportesGrupoId(null)
         setReportesReferenteId(null)
         setReportesPunteroId(null)
@@ -690,7 +576,7 @@ export default function PersonasPage(): React.JSX.Element {
     requestAnimationFrame(() => {    })
   }
 
-  /** Genera el HTML del reporte jerárquico (referentes / punteros / votantes) */
+  /** Genera el HTML del reporte jerÃ¡rquico (referentes / punteros / votantes) */
   function buildReportHtml(
     rol: 2 | 3 | 4,
     list: PersonaResponseDTO[],
@@ -700,7 +586,7 @@ export default function PersonasPage(): React.JSX.Element {
       allLeaders?: PersonaResponseDTO[]
       includeRolColumn?: boolean
       headerPathLine?: string
-      /** Solo rol referentes (2): una sección por grupo con salto de página al imprimir */
+      /** Solo rol referentes (2): una secciÃ³n por grupo con salto de pÃ¡gina al imprimir */
       referentesPrintLayout?: 'all' | 'byGroup'
     }
   ): string {
@@ -719,7 +605,7 @@ export default function PersonasPage(): React.JSX.Element {
     const groups = new Map<number, { leaderName: string; persons: PersonaResponseDTO[] }>()
     list.forEach((p) => {
       const idKey = p.LiderId ?? 0
-      const leaderName = p.LiderNombre ?? 'Sin líder'
+      const leaderName = p.LiderNombre ?? 'Sin lÃ­der'
       if (!groups.has(idKey)) groups.set(idKey, { leaderName, persons: [] })
       groups.get(idKey)!.persons.push(p)
     })
@@ -733,7 +619,7 @@ export default function PersonasPage(): React.JSX.Element {
         ? options!.allLeaders
         : autoLeadersForReferentes
 
-    // Para reportes por líder: incluir líderes sin registros (ej. grupos sin referentes)
+    // Para reportes por lÃ­der: incluir lÃ­deres sin registros (ej. grupos sin referentes)
     if (leadersToInclude.length > 0) {
       leadersToInclude.forEach((l) => {
         if (!groups.has(l.Id)) {
@@ -889,11 +775,11 @@ export default function PersonasPage(): React.JSX.Element {
     const theadHtml = `
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 ${includeRolColumn ? '<th>Rol</th>' : ''}
                 <th>Apellido y Nombre</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -1060,7 +946,7 @@ export default function PersonasPage(): React.JSX.Element {
       `
   }
 
-  /** Reporte jerárquico: Referente → Punteros → Votantes (1, 1.1, 1.1.1, 1.1.2, 1.2, …) */
+  /** Reporte jerÃ¡rquico: Referente â†’ Punteros â†’ Votantes (1, 1.1, 1.1.1, 1.1.2, 1.2, â€¦) */
   function buildJerarquiaReportHtml(
     data?: { grupos: PersonaResponseDTO[]; referentes: PersonaResponseDTO[]; punteros: PersonaResponseDTO[]; votantes: PersonaResponseDTO[] },
     options?: { headerPathLine?: string; printLayout?: 'all' | 'byPuntero' }
@@ -1113,7 +999,7 @@ export default function PersonasPage(): React.JSX.Element {
           <div class="header">
             <div class="headerLeft">
               ${headerPath ? `<div class="metaLine">${headerPath}</div>` : ''}
-              <h1>JERARQUÍA POR GRUPO → REFERENTES → PUNTEROS → VOTANTES</h1>
+              <h1>JERARQUÃA POR GRUPO â†’ REFERENTES â†’ PUNTEROS â†’ VOTANTES</h1>
             </div>
             <div class="meta">
               <div>Fecha: ${formattedDate}</div>
@@ -1141,11 +1027,11 @@ export default function PersonasPage(): React.JSX.Element {
       const jerarquiaThead = `
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 <th>Rol</th>
                 <th>Apellido y Nombre</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -1177,9 +1063,9 @@ export default function PersonasPage(): React.JSX.Element {
           })
         })
 
-        const grupoMeta = `${g.Apellido ?? ''}, ${g.Nombre ?? ''}`.trim().replace(/^,\s*|,\s*$/g, '') || '—'
+        const grupoMeta = `${g.Apellido ?? ''}, ${g.Nombre ?? ''}`.trim().replace(/^,\s*|,\s*$/g, '') || 'â€”'
         grupoResumenLines.push({
-          nombre: `${g.Apellido}, ${g.Nombre}`.trim() || '—',
+          nombre: `${g.Apellido}, ${g.Nombre}`.trim() || 'â€”',
           referentes: refsForGroup.length,
           punteros: groupPunterosPreview,
           votantes: groupVotantesPreview,
@@ -1342,7 +1228,7 @@ export default function PersonasPage(): React.JSX.Element {
               </colgroup>
               <thead>
                 <tr>
-                  <th class="reportGrupoResumenIdx">N.º</th>
+                  <th class="reportGrupoResumenIdx">N.Âº</th>
                   <th>Grupo</th>
                   <th class="reportGrupoResumenThNum">Cantidad de Referentes</th>
                   <th class="reportGrupoResumenThNum">Cantidad de Punteros</th>
@@ -1374,7 +1260,7 @@ export default function PersonasPage(): React.JSX.Element {
       <html lang="es">
         <head>
           <meta charSet="utf-8" />
-          <title>Reporte - Jerarquía Referentes / Punteros / Votantes</title>
+          <title>Reporte - JerarquÃ­a Referentes / Punteros / Votantes</title>
           <style>
             @page { size: A4 landscape; margin: 12mm; }
             body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
@@ -1694,7 +1580,7 @@ export default function PersonasPage(): React.JSX.Element {
       <html lang="es">
         <head>
           <meta charSet="utf-8" />
-          <title>Reporte - Jerarquía Referentes / Punteros / Votantes</title>
+          <title>Reporte - JerarquÃ­a Referentes / Punteros / Votantes</title>
           <style>
             @page { size: A4 landscape; margin: 12mm; }
             body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 24px; color: #0f172a; }
@@ -1833,7 +1719,7 @@ export default function PersonasPage(): React.JSX.Element {
                   ? `<div class="metaLine">${(options?.headerPathLine ?? '').trim()}</div>`
                   : ''
               }
-              <h1>JERARQUÍA POR GRUPO → REFERENTES → PUNTEROS → VOTANTES</h1>
+              <h1>JERARQUÃA POR GRUPO â†’ REFERENTES â†’ PUNTEROS â†’ VOTANTES</h1>
             </div>
             <div class="meta">
               <div>Fecha: ${formattedDate}</div>
@@ -1847,11 +1733,11 @@ export default function PersonasPage(): React.JSX.Element {
           <table>
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 <th>Rol</th>
                 <th>Apellido y Nombre</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -1968,11 +1854,11 @@ export default function PersonasPage(): React.JSX.Element {
           <table>
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 <th>Rol</th>
                 <th>Apellido y Nombre</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -2045,11 +1931,11 @@ export default function PersonasPage(): React.JSX.Element {
     const theadPunterosReport = `
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 <th>Rol</th>
                 <th>Apellido y Nombre</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -2619,7 +2505,7 @@ export default function PersonasPage(): React.JSX.Element {
         const stamp = new Date().toISOString().slice(0, 10)
         downloadUtf8Csv(
           `referentes_${stamp}.csv`,
-          ['Grupo', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+          ['Grupo', 'Apellido', 'Nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
           sorted.map((r) => {
             const g = r.LiderId != null ? leaderById.get(r.LiderId) : undefined
             const gname = g ? `${g.Apellido}, ${g.Nombre}` : ''
@@ -2639,7 +2525,7 @@ export default function PersonasPage(): React.JSX.Element {
         const stamp = new Date().toISOString().slice(0, 10)
         downloadUtf8Csv(
           `punteros_${stamp}.csv`,
-          ['Grupo', 'Referente', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+          ['Grupo', 'Referente', 'Apellido', 'Nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
           sorted.map((pun) => {
             const ref = pun.LiderId != null ? rById.get(pun.LiderId) : undefined
             const g = ref?.LiderId != null ? gById.get(ref.LiderId) : undefined
@@ -2669,7 +2555,7 @@ export default function PersonasPage(): React.JSX.Element {
         const stamp = new Date().toISOString().slice(0, 10)
         downloadUtf8Csv(
           `votantes_${stamp}.csv`,
-          ['Grupo', 'Referente', 'Puntero', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+          ['Grupo', 'Referente', 'Puntero', 'Apellido', 'Nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
           sorted.map((v) => {
             const pun = v.LiderId != null ? pById.get(v.LiderId) : undefined
             const ref = pun?.LiderId != null ? rById.get(pun.LiderId) : undefined
@@ -2720,7 +2606,7 @@ export default function PersonasPage(): React.JSX.Element {
     const sorted = [...reportesPersonasByEscuelaMesa].sort(sortPersonasApellidoNombre)
     downloadUtf8Csv(
       `personas_escuela_mesa_${stamp}.csv`,
-      ['Rol', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+      ['Rol', 'Apellido', 'Nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
       sorted.map((p) => [
         roleLabelForCsv(p.Rol),
         p.Apellido,
@@ -2744,7 +2630,7 @@ export default function PersonasPage(): React.JSX.Element {
       const sorted = [...reportesGruposSorted].sort(sortPersonasApellidoNombre)
       downloadUtf8Csv(
         `grupos_${stamp}.csv`,
-        ['Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        ['Apellido', 'Nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
         sorted.map((g) => [g.Apellido, g.Nombre, g.DNI, g.Telefono ?? '', g.EscuelaNombre ?? '', g.NroMesa ?? ''])
       )
       return
@@ -2754,7 +2640,7 @@ export default function PersonasPage(): React.JSX.Element {
       const refs = reportesReferentesSorted.filter((r) => r.LiderId === reportesGrupoId).sort(sortPersonasApellidoNombre)
       downloadUtf8Csv(
         `referentes_grupo_${stamp}.csv`,
-        ['Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        ['Apellido', 'Nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
         refs.map((r) => [r.Apellido, r.Nombre, r.DNI, r.Telefono ?? '', r.EscuelaNombre ?? '', r.NroMesa ?? ''])
       )
       return
@@ -2779,7 +2665,7 @@ export default function PersonasPage(): React.JSX.Element {
       })
       downloadUtf8Csv(
         `punteros_y_votantes_referente_${stamp}.csv`,
-        ['Grupo', 'Referente', 'Tipo / Puntero', 'Apellido y nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        ['Grupo', 'Referente', 'Tipo / Puntero', 'Apellido y nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
         rows
       )
       return
@@ -2795,7 +2681,7 @@ export default function PersonasPage(): React.JSX.Element {
       const votantes = [...reportesVotantesDePuntero].sort(sortPersonasApellidoNombre)
       downloadUtf8Csv(
         `votantes_puntero_${stamp}.csv`,
-        ['Grupo', 'Referente', 'Puntero', 'Apellido', 'Nombre', 'DNI', 'Teléfono', 'Escuela', 'Mesa'],
+        ['Grupo', 'Referente', 'Puntero', 'Apellido', 'Nombre', 'DNI', 'TelÃ©fono', 'Escuela', 'Mesa'],
         votantes.map((v) => [gname, rname, punlabel, v.Apellido, v.Nombre, v.DNI, v.Telefono ?? '', v.EscuelaNombre ?? '', v.NroMesa ?? ''])
       )
     }
@@ -2892,9 +2778,9 @@ export default function PersonasPage(): React.JSX.Element {
                 <td><span class="roleBadge ${roleBadgeClass(p.Rol)}">${roleLabel(p.Rol)}</span></td>
                 <td>${p.Apellido}, ${p.Nombre}</td>
                 <td>${p.DNI}</td>
-                <td>${p.Telefono ?? '—'}</td>
-                <td>${p.EscuelaNombre ?? '—'}</td>
-                <td>${p.NroMesa ?? '—'}</td>
+                <td>${p.Telefono ?? 'â€”'}</td>
+                <td>${p.EscuelaNombre ?? 'â€”'}</td>
+                <td>${p.NroMesa ?? 'â€”'}</td>
               </tr>`
           )
           .join('')
@@ -2922,9 +2808,9 @@ export default function PersonasPage(): React.JSX.Element {
                   <td><span class="roleBadge ${roleBadgeClass(p.Rol)}">${roleLabel(p.Rol)}</span></td>
                   <td>${p.Apellido}, ${p.Nombre}</td>
                   <td>${p.DNI}</td>
-                  <td>${p.Telefono ?? '—'}</td>
-                  <td>${p.EscuelaNombre ?? '—'}</td>
-                  <td>${p.NroMesa ?? '—'}</td>
+                  <td>${p.Telefono ?? 'â€”'}</td>
+                  <td>${p.EscuelaNombre ?? 'â€”'}</td>
+                  <td>${p.NroMesa ?? 'â€”'}</td>
                 </tr>`
               globalIndex += 1
               return rowHtml
@@ -2949,9 +2835,9 @@ export default function PersonasPage(): React.JSX.Element {
               <td><span class="roleBadge ${roleBadgeClass(p.Rol)}">${roleLabel(p.Rol)}</span></td>
               <td>${p.Apellido}, ${p.Nombre}</td>
               <td>${p.DNI}</td>
-              <td>${p.Telefono ?? '—'}</td>
-              <td>—</td>
-              <td>${p.NroMesa ?? '—'}</td>
+              <td>${p.Telefono ?? 'â€”'}</td>
+              <td>â€”</td>
+              <td>${p.NroMesa ?? 'â€”'}</td>
             </tr>`
           globalIndex += 1
           return rowHtml
@@ -3013,11 +2899,11 @@ export default function PersonasPage(): React.JSX.Element {
           <table>
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 <th>Rol</th>
                 <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -3098,10 +2984,10 @@ export default function PersonasPage(): React.JSX.Element {
         <tr class="reportGroupTopRow">
           <td>${gi + 1}</td>
           <td><strong>${g.Apellido.toUpperCase()}${g.Nombre ? `, ${g.Nombre}` : ''}</strong></td>
-          <td class="reportCantNum">—</td>
-          <td class="reportCantNum">—</td>
-          <td class="reportCantNum">—</td>
-          <td class="reportCantNum">—</td>
+          <td class="reportCantNum">â€”</td>
+          <td class="reportCantNum">â€”</td>
+          <td class="reportCantNum">â€”</td>
+          <td class="reportCantNum">â€”</td>
         </tr>`)
 
       if (refs.length === 0) {
@@ -3212,7 +3098,7 @@ export default function PersonasPage(): React.JSX.Element {
           <table>
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 <th>Apellido/s y Nombre/s</th>
                 <th class="reportCantNum">Referentes</th>
                 <th class="reportCantNum">Punteros</th>
@@ -3243,7 +3129,7 @@ export default function PersonasPage(): React.JSX.Element {
     const formattedDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`
     const ref = reportesReferentes.find((r) => r.Id === reportesReferenteId) ?? null
     const title = ref ? `${ref.Apellido}, ${ref.Nombre}` : 'Referente'
-    const groupName = ref?.LiderNombre ?? '—'
+    const groupName = ref?.LiderNombre ?? 'â€”'
     const headerPathLine = (options?.headerPathLine ?? '').trim()
 
     const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
@@ -3436,11 +3322,11 @@ export default function PersonasPage(): React.JSX.Element {
           <table>
             <thead>
               <tr>
-                <th>Nº</th>
+                <th>NÂº</th>
                 <th>Rol</th>
                 <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -3459,9 +3345,9 @@ export default function PersonasPage(): React.JSX.Element {
     const pun = reportesPunteros.find((p) => p.Id === reportesPunteroId) ?? null
     const ref = pun?.LiderId != null ? reportesReferentes.find((r) => r.Id === pun.LiderId) ?? null : null
     const grupo = ref?.LiderId != null ? reportesGrupos.find((g) => g.Id === ref.LiderId) ?? null : null
-    const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : ref?.LiderNombre ?? '—'
-    const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : '—'
-    const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : '—'
+    const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : ref?.LiderNombre ?? 'â€”'
+    const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : 'â€”'
+    const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : 'â€”'
     const leaderById = new Map(reportesPunteros.map((p) => [p.Id, p]))
     openReportWindow(
       buildReportHtml(4, reportesVotantesDePuntero, leaderById, {
@@ -3481,7 +3367,7 @@ export default function PersonasPage(): React.JSX.Element {
     const allLeadersForReport = grupo ? [grupo] : []
     openReportWindow(
       buildReportHtml(2, list, leaderById, {
-        groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : '—',
+        groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : 'â€”',
         allLeaders: allLeadersForReport,
         headerPathLine: grupo ? `Grupo: ${grupo.Apellido}, ${grupo.Nombre}` : 'Grupo: Todos',
       })
@@ -3499,7 +3385,7 @@ export default function PersonasPage(): React.JSX.Element {
     w.document.open()
     w.document.write(
       buildReportHtml(2, list, leaderById, {
-        groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : '—',
+        groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : 'â€”',
         allLeaders: allLeadersForReport,
         headerPathLine: grupo ? `Grupo: ${grupo.Apellido}, ${grupo.Nombre}` : 'Grupo: Todos',
       })
@@ -3517,9 +3403,9 @@ export default function PersonasPage(): React.JSX.Element {
     const pun = reportesPunteros.find((p) => p.Id === reportesPunteroId) ?? null
     const ref = pun?.LiderId != null ? reportesReferentes.find((r) => r.Id === pun.LiderId) ?? null : null
     const grupo = ref?.LiderId != null ? reportesGrupos.find((g) => g.Id === ref.LiderId) ?? null : null
-    const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : ref?.LiderNombre ?? '—'
-    const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : '—'
-    const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : '—'
+    const grupoDisplay = grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : ref?.LiderNombre ?? 'â€”'
+    const referenteDisplay = ref ? `${ref.Apellido}, ${ref.Nombre}` : 'â€”'
+    const punteroDisplay = pun ? `${pun.Apellido}, ${pun.Nombre}` : 'â€”'
     const leaderById = new Map(reportesPunteros.map((p) => [p.Id, p]))
     w.document.write(
       buildReportHtml(4, reportesVotantesDePuntero, leaderById, {
@@ -3580,14 +3466,14 @@ export default function PersonasPage(): React.JSX.Element {
     if (tab.rol === 3) {
       fetchReportesData()
         .then(({ grupos, referentes, punteros }) => {
-          // Reusar la misma salida que en "Reportes" → "Todos los punteros"
+          // Reusar la misma salida que en "Reportes" â†’ "Todos los punteros"
           openReportWindow(buildPunterosPorGrupoReportHtml({ grupos, referentes, punteros }))
         })
         .catch(() => window.alert('No se pudo generar el reporte.'))
       return
     }
     if (tab.rol === 4) {
-      // Votantes: mostrar Jerarquía completa (por grupo)
+      // Votantes: mostrar JerarquÃ­a completa (por grupo)
       fetchReportesData()
         .then(({ grupos, referentes, punteros, votantes }) => {
           openReportWindow(buildJerarquiaReportHtml({ grupos, referentes, punteros, votantes }))
@@ -3601,7 +3487,7 @@ export default function PersonasPage(): React.JSX.Element {
       const first = filteredList[0]
       const groupTitle = first?.LiderNombre || tab.label
 
-      // Ordenar alfabéticamente por Apellido, luego Nombre
+      // Ordenar alfabÃ©ticamente por Apellido, luego Nombre
       const sorted = [...filteredList].sort((a, b) => {
         const ap = (a.Apellido || '').toLowerCase()
         const bp = (b.Apellido || '').toLowerCase()
@@ -3621,9 +3507,9 @@ export default function PersonasPage(): React.JSX.Element {
               <td>${index + 1}</td>
               <td>${p.Apellido}, ${p.Nombre}</td>
               <td>${p.DNI}</td>
-              <td>${p.Telefono ?? '—'}</td>
-              <td>${p.EscuelaNombre ?? '—'}</td>
-              <td>${p.NroMesa ?? '—'}</td>
+              <td>${p.Telefono ?? 'â€”'}</td>
+              <td>${p.EscuelaNombre ?? 'â€”'}</td>
+              <td>${p.NroMesa ?? 'â€”'}</td>
             </tr>`
         )
         .join('')
@@ -3659,7 +3545,7 @@ export default function PersonasPage(): React.JSX.Element {
                 <th>#</th>
                 <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -3787,9 +3673,9 @@ export default function PersonasPage(): React.JSX.Element {
               <td>${index + 1}</td>
               <td>${p.Apellido}, ${p.Nombre}</td>
               <td>${p.DNI}</td>
-              <td>${p.Telefono ?? '—'}</td>
-              <td>${p.EscuelaNombre ?? '—'}</td>
-              <td>${p.NroMesa ?? '—'}</td>
+              <td>${p.Telefono ?? 'â€”'}</td>
+              <td>${p.EscuelaNombre ?? 'â€”'}</td>
+              <td>${p.NroMesa ?? 'â€”'}</td>
             </tr>`
         )
         .join('')
@@ -3825,7 +3711,7 @@ export default function PersonasPage(): React.JSX.Element {
                 <th>#</th>
                 <th>Apellido/s y Nombre/s</th>
                 <th>DNI</th>
-                <th>Teléfono</th>
+                <th>TelÃ©fono</th>
                 <th>Escuela</th>
                 <th>Mesa</th>
               </tr>
@@ -3951,7 +3837,7 @@ export default function PersonasPage(): React.JSX.Element {
 
   async function handleDelete(entity: PersonaResponseDTO) {
     const name = `${entity.Nombre} ${entity.Apellido}`
-    if (!window.confirm(`¿Eliminar a ${name}?`)) return
+    if (!window.confirm(`Â¿Eliminar a ${name}?`)) return
     try {
       await deletePersona(entity.Id)
       invalidatePersonasByRoleCache()
@@ -4133,8 +4019,8 @@ export default function PersonasPage(): React.JSX.Element {
                   type="button"
                   className="personasInicioHelpBtnInTitle"
                   onClick={openAppHelpModal}
-                  title="Ayuda para configuración inicial de la aplicación"
-                  aria-label="Ayuda para configuración inicial de la aplicación"
+                  title="Ayuda para configuraciÃ³n inicial de la aplicaciÃ³n"
+                  aria-label="Ayuda para configuraciÃ³n inicial de la aplicaciÃ³n"
                 >
                   <span className="personasHelpInfoIBadge" aria-hidden="true">
                     i
@@ -4146,10 +4032,10 @@ export default function PersonasPage(): React.JSX.Element {
               {tab.isReportes
                 ? 'Listados para ver o imprimir.'
                 : tab.id === 'inicio'
-                ? 'Panel principal con estadísticas generales.'
+                ? 'Panel principal con estadÃ­sticas generales.'
                 : tab.id === 'configuracion'
                 ? ''
-                : `Administrá los ${tab.label.toLowerCase()} del sistema. Creá, editá o eliminá registros desde la tabla.`}
+                : `AdministrÃ¡ los ${tab.label.toLowerCase()} del sistema. CreÃ¡, editÃ¡ o eliminÃ¡ registros desde la tabla.`}
             </p>
           </div>
           {!tab.isReportes && tab.id !== 'configuracion' && tab.id !== 'inicio' && (
@@ -4159,7 +4045,7 @@ export default function PersonasPage(): React.JSX.Element {
                 className="personasButton personasButtonPrimary"
                 onClick={openCreate}
                 disabled={showForm || isSubmitting}
-                title={showForm ? 'Guardá o cancelá para crear/editar nuevamente' : `Crear nuevo ${tab.singular}`}
+                title={showForm ? 'GuardÃ¡ o cancelÃ¡ para crear/editar nuevamente' : `Crear nuevo ${tab.singular}`}
                 aria-label={showForm ? 'Nuevo deshabilitado' : `Nuevo ${tab.singular}`}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -4233,7 +4119,7 @@ export default function PersonasPage(): React.JSX.Element {
                     Imprimir listado de referentes
                   </h3>
                   <p className="personasPadronModalSubtitle">
-                    Elegí cómo querés armar el documento para imprimir o guardar como PDF.
+                    ElegÃ­ cÃ³mo querÃ©s armar el documento para imprimir o guardar como PDF.
                   </p>
                 </div>
                 <button
@@ -4243,7 +4129,7 @@ export default function PersonasPage(): React.JSX.Element {
                   aria-label="Cerrar"
                   title="Cerrar"
                 >
-                  ×
+                  Ã—
                 </button>
               </div>
               <div className="personasPadronBody">
@@ -4252,13 +4138,13 @@ export default function PersonasPage(): React.JSX.Element {
                     Todo el listado junto
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Un único reporte continuo, como hasta ahora.
+                    Un Ãºnico reporte continuo, como hasta ahora.
                   </p>
                   <button type="button" className="personasButton personasButtonSecondary" onClick={() => executeReferentesPrint('byGroup')}>
-                    Una sección por grupo
+                    Una secciÃ³n por grupo
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Cada grupo en hoja(s) aparte, repitiendo título y columnas. El total general queda al final, separado.
+                    Cada grupo en hoja(s) aparte, repitiendo tÃ­tulo y columnas. El total general queda al final, separado.
                   </p>
                 </div>
                 <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
@@ -4292,7 +4178,7 @@ export default function PersonasPage(): React.JSX.Element {
                     Imprimir listado de punteros
                   </h3>
                   <p className="personasPadronModalSubtitle">
-                    Elegí cómo querés armar el documento para imprimir o guardar como PDF.
+                    ElegÃ­ cÃ³mo querÃ©s armar el documento para imprimir o guardar como PDF.
                   </p>
                 </div>
                 <button
@@ -4302,7 +4188,7 @@ export default function PersonasPage(): React.JSX.Element {
                   aria-label="Cerrar"
                   title="Cerrar"
                 >
-                  ×
+                  Ã—
                 </button>
               </div>
               <div className="personasPadronBody">
@@ -4311,13 +4197,13 @@ export default function PersonasPage(): React.JSX.Element {
                     Todo el listado junto
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Un único reporte con todos los grupos, referentes y punteros.
+                    Un Ãºnico reporte con todos los grupos, referentes y punteros.
                   </p>
                   <button type="button" className="personasButton personasButtonSecondary" onClick={() => executePunterosPrint('byReferente')}>
-                    Una sección por referente
+                    Una secciÃ³n por referente
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Cada referente en hoja(s) aparte: se repiten título, nombre del grupo y columnas. El total general va al final, sin fila de encabezados de tabla.
+                    Cada referente en hoja(s) aparte: se repiten tÃ­tulo, nombre del grupo y columnas. El total general va al final, sin fila de encabezados de tabla.
                   </p>
                 </div>
                 <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
@@ -4348,10 +4234,10 @@ export default function PersonasPage(): React.JSX.Element {
               <div className="personasPadronModalHeader">
                 <div>
                   <h3 id="votantesPrintModalTitle" className="personasPadronModalTitle">
-                    Imprimir jerarquía (votantes)
+                    Imprimir jerarquÃ­a (votantes)
                   </h3>
                   <p className="personasPadronModalSubtitle">
-                    Elegí cómo querés armar el documento para imprimir o guardar como PDF.
+                    ElegÃ­ cÃ³mo querÃ©s armar el documento para imprimir o guardar como PDF.
                   </p>
                 </div>
                 <button
@@ -4361,7 +4247,7 @@ export default function PersonasPage(): React.JSX.Element {
                   aria-label="Cerrar"
                   title="Cerrar"
                 >
-                  ×
+                  Ã—
                 </button>
               </div>
               <div className="personasPadronBody">
@@ -4370,13 +4256,13 @@ export default function PersonasPage(): React.JSX.Element {
                     Todo el listado junto
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Un único reporte con la jerarquía completa (grupo → referente → puntero → votante).
+                    Un Ãºnico reporte con la jerarquÃ­a completa (grupo â†’ referente â†’ puntero â†’ votante).
                   </p>
                   <button type="button" className="personasButton personasButtonSecondary" onClick={() => executeVotantesPrint('byPuntero')}>
-                    Una sección por puntero
+                    Una secciÃ³n por puntero
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Cada puntero en hoja(s) aparte: se repiten título, nombre del grupo, columnas y el bloque grupo + referente + puntero + sus votantes. El total general va al final, sin encabezados de tabla.
+                    Cada puntero en hoja(s) aparte: se repiten tÃ­tulo, nombre del grupo, columnas y el bloque grupo + referente + puntero + sus votantes. El total general va al final, sin encabezados de tabla.
                   </p>
                 </div>
                 <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
@@ -4410,7 +4296,7 @@ export default function PersonasPage(): React.JSX.Element {
                     {getDownloadModalTitle(downloadModalTarget)}
                   </h3>
                   <p className="personasPadronModalSubtitle">
-                    Elegí guardar el reporte como PDF (mediante impresión) o generar un archivo Excel compatible (.csv).
+                    ElegÃ­ guardar el reporte como PDF (mediante impresiÃ³n) o generar un archivo Excel compatible (.csv).
                   </p>
                 </div>
                 <button
@@ -4420,7 +4306,7 @@ export default function PersonasPage(): React.JSX.Element {
                   aria-label="Cerrar"
                   title="Cerrar"
                 >
-                  ×
+                  Ã—
                 </button>
               </div>
               <div className="personasPadronBody">
@@ -4434,8 +4320,8 @@ export default function PersonasPage(): React.JSX.Element {
                     Guardar como PDF
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Se abre la ventana de impresión del navegador; como destino elegí «Guardar como PDF» o «Microsoft Print
-                    to PDF».
+                    Se abre la ventana de impresiÃ³n del navegador; como destino elegÃ­ Â«Guardar como PDFÂ» o Â«Microsoft Print
+                    to PDFÂ».
                   </p>
                   <button type="button" className="personasButton personasButtonSecondary" onClick={handleDownloadModalExcel}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -4446,7 +4332,7 @@ export default function PersonasPage(): React.JSX.Element {
                     Generar Excel (.csv)
                   </button>
                   <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
-                    Se descarga un archivo .csv (UTF-8) que podés abrir con Excel u otra planilla.
+                    Se descarga un archivo .csv (UTF-8) que podÃ©s abrir con Excel u otra planilla.
                   </p>
                 </div>
                 <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end' }}>
@@ -4462,7 +4348,7 @@ export default function PersonasPage(): React.JSX.Element {
         {tab.id === 'inicio' ? (
           <div key="inicioPanel" className="reportesPanel">
             {statsLoading ? (
-              <p className="personasLoading">Cargando estadísticas...</p>
+              <p className="personasLoading">Cargando estadÃ­sticas...</p>
             ) : (
               <>
                 <div className="reportesGrid">
@@ -4507,7 +4393,7 @@ export default function PersonasPage(): React.JSX.Element {
                   <img
                     className="reportesInicioDiagram"
                     src={`${import.meta.env.BASE_URL}ImagenControl.png`}
-                    alt="Estructura jerárquica del territorio: Grupo, Referente, Puntero y Votante"
+                    alt="Estructura jerÃ¡rquica del territorio: Grupo, Referente, Puntero y Votante"
                     loading="lazy"
                     decoding="async"
                   />
@@ -4528,7 +4414,7 @@ export default function PersonasPage(): React.JSX.Element {
                 <div className="personasHelpAppModal">
                   <div className="personasHelpAppHeader">
                     <h3 id="appHelpTitle" className="personasHelpAppTitle">
-                      Ayuda para usar la aplicación
+                      Ayuda para usar la aplicaciÃ³n
                     </h3>
                     <button
                       type="button"
@@ -4537,43 +4423,43 @@ export default function PersonasPage(): React.JSX.Element {
                       aria-label="Cerrar"
                       title="Cerrar"
                     >
-                      ×
+                      Ã—
                     </button>
                   </div>
 
                   <div className="personasHelpAppBody">
                     <ol className="personasHelpAppList">
                       <li>
-                        Carga la <strong>información de tu grupo</strong> en la pestaña <strong>Grupos</strong>.
+                        Carga la <strong>informaciÃ³n de tu grupo</strong> en la pestaÃ±a <strong>Grupos</strong>.
                       </li>
                       <li>
-                        Carga la <strong>información de los Referentes</strong> en la pestaña <strong>Referentes</strong>.
+                        Carga la <strong>informaciÃ³n de los Referentes</strong> en la pestaÃ±a <strong>Referentes</strong>.
                         <br />
-                        <span>Recordá que un referente tiene que pertenecer a un grupo.</span>
+                        <span>RecordÃ¡ que un referente tiene que pertenecer a un grupo.</span>
                       </li>
                       <li>
-                        Carga la <strong>información de los Punteros</strong> en la pestaña <strong>Punteros</strong>.
+                        Carga la <strong>informaciÃ³n de los Punteros</strong> en la pestaÃ±a <strong>Punteros</strong>.
                         <br />
-                        <span>Recordá que un puntero tiene que pertenecer a un Referente.</span>
+                        <span>RecordÃ¡ que un puntero tiene que pertenecer a un Referente.</span>
                       </li>
                       <li>
-                        Carga la <strong>información de los Votantes</strong> en la pestaña <strong>Votantes</strong>.
+                        Carga la <strong>informaciÃ³n de los Votantes</strong> en la pestaÃ±a <strong>Votantes</strong>.
                         <br />
-                        <span>Recordá que un votante tiene que pertenecer a un Puntero.</span>
+                        <span>RecordÃ¡ que un votante tiene que pertenecer a un Puntero.</span>
                       </li>
                     </ol>
 
                     <div className="personasHelpAppSection">
-                      <strong>¿Qué hace la pestaña Reportes?</strong>
+                      <strong>Â¿QuÃ© hace la pestaÃ±a Reportes?</strong>
                       <div className="personasHelpAppText">
-                        Te permite <strong>ver</strong> e <strong>imprimir</strong> listados armados con los filtros (Grupo, Referente y/o Puntero) para generar reportes de la jerarquía.
+                        Te permite <strong>ver</strong> e <strong>imprimir</strong> listados armados con los filtros (Grupo, Referente y/o Puntero) para generar reportes de la jerarquÃ­a.
                       </div>
                     </div>
 
                     <div className="personasHelpAppSection">
-                      <strong>¿Cómo se usa el Padrón?</strong>
+                      <strong>Â¿CÃ³mo se usa el PadrÃ³n?</strong>
                       <div className="personasHelpAppText">
-                        El padrón es un Excel que se usa para <strong>completar y sincronizar datos por DNI</strong> (por ejemplo, Escuela/Mesa). Primero lo <strong>importás</strong> en Configuración y luego usás la opción de <strong>sincronizar</strong> para actualizar los registros existentes.
+                        El padrÃ³n es un Excel que se usa para <strong>completar y sincronizar datos por DNI</strong> (por ejemplo, Escuela/Mesa). Primero lo <strong>importÃ¡s</strong> en ConfiguraciÃ³n y luego usÃ¡s la opciÃ³n de <strong>sincronizar</strong> para actualizar los registros existentes.
                       </div>
                     </div>
                   </div>
@@ -4585,23 +4471,23 @@ export default function PersonasPage(): React.JSX.Element {
           <div key="configPanel" className="reportesPanel">
             <div className="personasCard" style={{ marginTop: 12 }}>
               <div className="personasFormHeader">
-                <h3 className="personasFormTitle">Administrador</h3>
+                <h3 className="personasFormTitle">Usuarios</h3>
               </div>
               <p style={{ margin: '0 0 12px', color: '#555', fontSize: 13 }}>
-                Gestión de Administradores. Creá, editá o eliminá registros desde la tabla.
+                GestiÃ³n de accesos al sistema (login JWT, roles y permisos). No administra personas territoriales.
               </p>
-              <button type="button" className="personasButton personasButtonPrimary" onClick={openAdminModal}>
-                Gestionar administradores
+              <button type="button" className="personasButton personasButtonPrimary" onClick={() => setShowUsersModal(true)}>
+                Gestionar usuarios
               </button>
             </div>
 
             <div className="personasCard" style={{ marginTop: 12 }}>
               <div className="personasFormHeader">
-                <h3 className="personasFormTitle">Padrón</h3>
+                <h3 className="personasFormTitle">PadrÃ³n</h3>
               </div>
 
               <p style={{ margin: '0 0 12px', color: '#555', fontSize: 13 }}>
-                Cargá el padrón en formato Excel para completar Escuela/Mesa (y sincronizar datos por DNI).
+                CargÃ¡ el padrÃ³n en formato Excel para completar Escuela/Mesa (y sincronizar datos por DNI).
               </p>
 
               <button
@@ -4609,7 +4495,7 @@ export default function PersonasPage(): React.JSX.Element {
                 className="personasButton personasButtonPrimary"
                 onClick={openPadronImportModal}
               >
-                Importar padrón
+                Importar padrÃ³n
               </button>
               <span className="personasHelpWrap" aria-label="Ayuda para el formato del Excel">
                 <span className="personasHelpIcon" aria-hidden="true">i</span>
@@ -4632,9 +4518,9 @@ export default function PersonasPage(): React.JSX.Element {
                 <div className="personasPadronModal">
                   <div className="personasPadronModalHeader">
                     <div>
-                      <h3 id="padronImportTitle" className="personasPadronModalTitle">Importar Padrón</h3>
+                      <h3 id="padronImportTitle" className="personasPadronModalTitle">Importar PadrÃ³n</h3>
                       <p className="personasPadronModalSubtitle">
-                        Cargá el padrón en Excel y sincronizá por DNI.
+                        CargÃ¡ el padrÃ³n en Excel y sincronizÃ¡ por DNI.
                       </p>
                     </div>
                     <button
@@ -4644,7 +4530,7 @@ export default function PersonasPage(): React.JSX.Element {
                       aria-label="Cerrar"
                       title="Cerrar"
                     >
-                      ×
+                      Ã—
                     </button>
                   </div>
 
@@ -4673,7 +4559,7 @@ export default function PersonasPage(): React.JSX.Element {
                             disabled={padronUploadLoading || !padronFile}
                             onClick={() => { void handleUploadPadronClick() }}
                           >
-                            {padronUploadLoading ? 'Cargando...' : 'Cargar Padrón'}
+                            {padronUploadLoading ? 'Cargando...' : 'Cargar PadrÃ³n'}
                           </button>
                           <button
                             type="button"
@@ -4758,7 +4644,7 @@ export default function PersonasPage(): React.JSX.Element {
                             {padronSyncResult.DnisNotFound.length > 0 && (
                               <div style={{ marginTop: 10 }}>
                                 <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600 }}>
-                                  En rojo (no existían en personas):
+                                  En rojo (no existÃ­an en personas):
                                 </p>
                                 <div style={{ color: 'crimson', fontSize: 13, lineHeight: 1.5, maxHeight: 180, overflow: 'auto' }}>
                                   {padronSyncResult.DnisNotFound.slice(0, 200).map((d) => (
@@ -4782,308 +4668,8 @@ export default function PersonasPage(): React.JSX.Element {
               </div>
             )}
 
-            {showAdminModal && (
-              <div
-                className="personasAdminOverlay"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="adminModalTitle"
-                onMouseDown={(e) => {
-                  if (e.target === e.currentTarget) closeAdminModal()
-                }}
-              >
-                <div className="personasAdminModal">
-                  <div className="personasAdminModalHeader">
-                    <div>
-                      <h3 id="adminModalTitle" className="personasAdminModalTitle">Gestión de Administradores</h3>
-                      <p className="personasAdminModalSubtitle">Creá, editá o eliminá registros desde la tabla.</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="personasPadronClose"
-                      onClick={closeAdminModal}
-                      aria-label="Cerrar"
-                      title="Cerrar"
-                    >
-                      ×
-                    </button>
-                  </div>
+            <UsersManagementModal open={showUsersModal} onClose={() => setShowUsersModal(false)} />
 
-                  <div className="personasAdminModalBody">
-                    <div className="personasAdminTopBar">
-                      <div className="personasSearchWrap personasAdminSearchWrap">
-                        <svg className="personasSearchIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="11" cy="11" r="7" />
-                          <path d="M21 21l-4.3-4.3" />
-                        </svg>
-                        <input
-                          value={adminSearch}
-                          onChange={(e) => { setAdminSearch(e.target.value); setAdminPage(1) }}
-                          placeholder="Buscar por nombre, apellido o DNI"
-                          disabled={adminShowForm || adminSubmitting}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="personasButton personasButtonPrimary personasAdminNewBtn"
-                        onClick={openAdminCreate}
-                        disabled={adminShowForm || adminSubmitting}
-                      >
-                        + Nuevo administrador
-                      </button>
-                    </div>
-
-                    {adminShowForm && (
-                      <div className="personasCard" style={{ marginTop: 12 }}>
-                        <div className="personasFormHeader">
-                          <h3 className="personasFormTitle">
-                            {adminEditingId != null ? 'Editar administrador' : 'Crear administrador'}
-                          </h3>
-                          <button
-                            type="button"
-                            className="personasFormClose"
-                            onClick={() => { setAdminShowForm(false); setAdminEditingId(null) }}
-                            title="Cerrar"
-                            aria-label="Cerrar"
-                          >
-                            ×
-                          </button>
-                        </div>
-                        <form className="personasForm" onSubmit={handleAdminSubmit}>
-                          <label className="personasField">
-                            <span className="personasFieldLabel">Nombre *</span>
-                            <input
-                              className="personasInput"
-                              value={adminForm.Nombre}
-                              onChange={(e) => setAdminForm((s) => ({ ...s, Nombre: sanitizeNombreApellido(e.target.value) }))}
-                              maxLength={50}
-                              autoComplete="given-name"
-                            />
-                          </label>
-                          <label className="personasField">
-                            <span className="personasFieldLabel">Apellido *</span>
-                            <input
-                              className="personasInput"
-                              value={adminForm.Apellido}
-                              onChange={(e) => setAdminForm((s) => ({ ...s, Apellido: sanitizeNombreApellido(e.target.value) }))}
-                              maxLength={50}
-                              autoComplete="family-name"
-                            />
-                          </label>
-                          <label className="personasField">
-                            <span className="personasFieldLabel">DNI *</span>
-                            <input
-                              className="personasInput"
-                              value={adminForm.DNI}
-                              onChange={(e) => setAdminForm((s) => ({ ...s, DNI: sanitizeDNI(e.target.value) }))}
-                              inputMode="numeric"
-                              maxLength={8}
-                              autoComplete="off"
-                            />
-                          </label>
-                          <label className="personasField">
-                            <span className="personasFieldLabel">Teléfono</span>
-                            <input
-                              className="personasInput"
-                              value={adminForm.Telefono ?? ''}
-                              onChange={(e) => setAdminForm((s) => ({ ...s, Telefono: sanitizeTelefono(e.target.value) }))}
-                              inputMode="tel"
-                              maxLength={13}
-                              autoComplete="tel"
-                            />
-                          </label>
-                          <label className="personasField">
-                            <span className="personasFieldLabel">Escuela</span>
-                            <input
-                              className="personasInput"
-                              value={adminForm.Escuela ?? ''}
-                              onChange={(e) => setAdminForm((s) => ({ ...s, Escuela: sanitizeEscuela(e.target.value) }))}
-                              maxLength={75}
-                              autoComplete="organization"
-                            />
-                          </label>
-                          <label className="personasField">
-                            <span className="personasFieldLabel">Mesa</span>
-                            <input
-                              className="personasInput"
-                              value={adminForm.Mesa ?? ''}
-                              onChange={(e) => setAdminForm((s) => ({ ...s, Mesa: sanitizeMesa(e.target.value) }))}
-                              inputMode="numeric"
-                              maxLength={4}
-                              autoComplete="off"
-                            />
-                          </label>
-                          <div className="personasActions personasFieldFull">
-                            <button className="personasButton" disabled={adminSubmitting} type="submit">
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                                <path d="M17 21v-8H7v8" />
-                                <path d="M7 3v5h10" />
-                              </svg>
-                              {adminSubmitting ? 'Guardando...' : adminEditingId != null ? 'Guardar cambios' : 'Crear administrador'}
-                            </button>
-                            <button
-                              type="button"
-                              className="personasButton personasButtonSecondary"
-                              onClick={() => { setAdminShowForm(false); setAdminEditingId(null) }}
-                            >
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                aria-hidden="true"
-                              >
-                                <path d="M18 6 6 18" />
-                                <path d="M6 6l12 12" />
-                              </svg>
-                              Cancelar
-                            </button>
-                            <div className="personasStatus" role="status" aria-live="polite">
-                              {adminError ? <span key="error" className="personasError">{adminError}</span> : null}
-                              {adminSuccess ? <span key="success" className="personasSuccess">{adminSuccess}</span> : null}
-                            </div>
-                          </div>
-                        </form>
-                      </div>
-                    )}
-
-                    <div className="personasTableCard" style={{ marginTop: 12 }}>
-                      <div className="personasTableWrap">
-                        {adminListLoading ? (
-                          <p className="personasLoading">Cargando lista...</p>
-                        ) : (() => {
-                          const q = adminSearch.trim().toLowerCase()
-                          const filtered = q
-                            ? adminList.filter(
-                                (p) =>
-                                  (p.Nombre ?? '').toLowerCase().includes(q) ||
-                                  (p.Apellido ?? '').toLowerCase().includes(q) ||
-                                  (p.DNI ?? '').toLowerCase().includes(q)
-                              )
-                            : adminList
-                          const sorted = [...filtered].sort((a, b) => {
-                            const ap = (a.Apellido || '').toLowerCase()
-                            const bp = (b.Apellido || '').toLowerCase()
-                            if (ap < bp) return -1
-                            if (ap > bp) return 1
-                            const an = (a.Nombre || '').toLowerCase()
-                            const bn = (b.Nombre || '').toLowerCase()
-                            if (an < bn) return -1
-                            if (an > bn) return 1
-                            return 0
-                          })
-                          const totalPages = Math.max(1, Math.ceil(sorted.length / adminPerPage))
-                          const start = (adminPage - 1) * adminPerPage
-                          const pageRows = sorted.slice(start, start + adminPerPage)
-
-                          if (sorted.length === 0) {
-                            return <p className="personasEmpty">No hay administradores.</p>
-                          }
-
-                          return (
-                            <>
-                              <table className="personasTable">
-                                <thead>
-                                  <tr>
-                                    <th>Apellido y Nombre</th>
-                                    <th>DNI</th>
-                                    <th>Teléfono</th>
-                                    <th>Escuela</th>
-                                    <th>Mesa</th>
-                                    <th className="personasTableActions">Acciones</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {pageRows.map((row) => (
-                                    <tr key={`admin-${row.Id}`}>
-                                      <td>{`${row.Apellido}, ${row.Nombre}`}</td>
-                                      <td>{row.DNI}</td>
-                                      <td>{row.Telefono ?? '—'}</td>
-                                      <td>{row.EscuelaNombre ?? '—'}</td>
-                                      <td>{row.NroMesa ?? '—'}</td>
-                                      <td className="personasTableActions">
-                                        <button
-                                          type="button"
-                                          className="personasTableLink"
-                                          onClick={() => openAdminEdit(row)}
-                                          title="Editar"
-                                        >
-                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                          </svg>
-                                          Editar
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="personasTableLink personasTableLinkDelete"
-                                          onClick={() => { void handleAdminDelete(row) }}
-                                          title="Eliminar"
-                                        >
-                                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                            <line x1="10" y1="11" x2="10" y2="17" />
-                                            <line x1="14" y1="11" x2="14" y2="17" />
-                                          </svg>
-                                          Eliminar
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                              <div className="personasPagination">
-                                <span>Total: {sorted.length} administradores</span>
-                                <div className="personasPaginationNav">
-                                  <button
-                                    type="button"
-                                    className="personasPaginationBtn"
-                                    disabled={adminPage <= 1}
-                                    onClick={() => setAdminPage((p) => Math.max(1, p - 1))}
-                                    aria-label="Página anterior"
-                                  >
-                                    ←
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="personasPaginationBtn"
-                                    disabled={adminPage >= totalPages}
-                                    onClick={() => setAdminPage((p) => Math.min(totalPages, p + 1))}
-                                    aria-label="Página siguiente"
-                                  >
-                                    →
-                                  </button>
-                                  <div className="personasPaginationPerPage">
-                                    <select
-                                      value={adminPerPage}
-                                      onChange={(e) => { setAdminPerPage(Number(e.target.value)); setAdminPage(1) }}
-                                      aria-label="Elementos por página"
-                                    >
-                                      {[7, 10, 15, 25].map((n) => (
-                                        <option key={`admin-perpage-${n}`} value={n}>{n} / página</option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              </div>
-                            </>
-                          )
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         ) : tab.isReportes ? (
           <div key="reportesPanel" className="reportesPanel">
@@ -5180,7 +4766,7 @@ export default function PersonasPage(): React.JSX.Element {
                             const mesa = e.target.value
                             setReportesMesaNro(mesa)                          }}
                         >
-                          <option value="">{reportesEscuelaNombre ? 'Todas las mesas' : 'Primero seleccioná una escuela'}</option>
+                          <option value="">{reportesEscuelaNombre ? 'Todas las mesas' : 'Primero seleccionÃ¡ una escuela'}</option>
                           {reportesMesasOptions.map((mesa) => (
                             <option key={`reportes-mesa-${mesa}`} value={mesa}>
                               Mesa {mesa}
@@ -5193,7 +4779,7 @@ export default function PersonasPage(): React.JSX.Element {
                       {(() => {
                         const escuelaTxt = reportesEscuelaNombre || 'Todas las escuelas'
                         const mesaTxt = reportesMesaNro ? `Mesa ${reportesMesaNro}` : 'Todas las mesas'
-                        return `Se generará: Reporte de personas de ${escuelaTxt} (${mesaTxt})`
+                        return `Se generarÃ¡: Reporte de personas de ${escuelaTxt} (${mesaTxt})`
                       })()}
                     </div>
                     <div className="reportesListadoCardActions">
@@ -5291,7 +4877,7 @@ export default function PersonasPage(): React.JSX.Element {
                         >
                           <option value="">
                             {reportesReferenteBloqueadoSinGrupo
-                              ? 'Primero seleccioná un grupo'
+                              ? 'Primero seleccionÃ¡ un grupo'
                               : reportesReferentesOptions.length === 0
                                 ? 'Sin referentes disponibles'
                                 : 'Todos los referentes'}
@@ -5316,7 +4902,7 @@ export default function PersonasPage(): React.JSX.Element {
                         >
                           <option value="">
                             {reportesPunteroBloqueadoSinReferente
-                              ? 'Primero seleccioná un referente'
+                              ? 'Primero seleccionÃ¡ un referente'
                               : reportesPunterosDeReferenteSorted.length === 0
                                 ? 'Sin punteros disponibles'
                                 : 'Todos los punteros'}
@@ -5332,7 +4918,7 @@ export default function PersonasPage(): React.JSX.Element {
 
                     <div className="reportesHierarchySummary" aria-live="polite">
                       <div className="reportesHierarchySummaryText">
-                        Se generará:{' '}
+                        Se generarÃ¡:{' '}
                         <span className="reportesHierarchySummaryValue">
                           {(() => {
                             const grupo = reportesGrupoId != null ? reportesGruposSorted.find((g) => g.Id === reportesGrupoId) : null
@@ -5428,12 +5014,12 @@ export default function PersonasPage(): React.JSX.Element {
                       aria-label="Cerrar"
                       title="Cerrar"
                     >
-                      ×
+                      Ã—
                     </button>
                   </div>
                   <div className="reportesStructureInfoBody">
                     <p className="reportesStructureInfoP">
-                      Seleccioná hasta qué nivel querés filtrar la estructura.
+                      SeleccionÃ¡ hasta quÃ© nivel querÃ©s filtrar la estructura.
                     </p>
                     <p className="reportesStructureInfoP">Los filtros son opcionales.</p>
                     <ul className="reportesStructureInfoList">
@@ -5478,7 +5064,7 @@ export default function PersonasPage(): React.JSX.Element {
                 title="Cerrar (se pierden los datos no guardados)"
                 aria-label="Cerrar"
               >
-                ×
+                Ã—
               </button>
             </div>
             <form className="personasForm" onSubmit={onSubmit}>
@@ -5520,8 +5106,8 @@ export default function PersonasPage(): React.JSX.Element {
                     className="personasButton personasButtonSecondary personasIconButton"
                     onClick={() => { void handlePadronAutoFillByDni() }}
                     disabled={dniAutoFillLoading || (form.DNI ?? '').trim().length !== 8}
-                    title="Buscar en padrón por DNI"
-                    aria-label="Buscar en padrón por DNI"
+                    title="Buscar en padrÃ³n por DNI"
+                    aria-label="Buscar en padrÃ³n por DNI"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <circle cx="11" cy="11" r="8" />
@@ -5531,7 +5117,7 @@ export default function PersonasPage(): React.JSX.Element {
                 </div>
               </label>
               <label className="personasField">
-                <span className="personasFieldLabel">Teléfono</span>
+                <span className="personasFieldLabel">TelÃ©fono</span>
                 <input
                   className="personasInput"
                   value={form.Telefono ?? ''}
@@ -5574,7 +5160,7 @@ export default function PersonasPage(): React.JSX.Element {
                         <input
                           type="text"
                           className="personasInput personasLeaderInput"
-                          placeholder={selectedLeaderDisplay || `Escribí nombre, apellido o DNI para buscar...`}
+                          placeholder={selectedLeaderDisplay || `EscribÃ­ nombre, apellido o DNI para buscar...`}
                           value={leaderIsTyping ? leaderFilterText : ''}
                           onChange={(e) => {
                             const value = e.target.value
@@ -5584,7 +5170,7 @@ export default function PersonasPage(): React.JSX.Element {
                               setLeaderDropdownOpen(false)
                               setForm((s) => ({ ...s, LiderId: null }))
                             } else {
-                              // si el usuario escribe, dejamos el ID seleccionado en null hasta que elija una opción
+                              // si el usuario escribe, dejamos el ID seleccionado en null hasta que elija una opciÃ³n
                               setForm((s) => ({ ...s, LiderId: null }))
                               setLeaderDropdownOpen(true)
                             }
@@ -5639,7 +5225,7 @@ export default function PersonasPage(): React.JSX.Element {
                         <button
                           type="button"
                           className="personasLeaderHelpBtn personasLeaderHelpBtnPrimary"
-                          title="Si no recordás el Nombre o Apellido, buscalo en la lista desplegable"
+                          title="Si no recordÃ¡s el Nombre o Apellido, buscalo en la lista desplegable"
                           aria-label="Mostrar lista desplegable"
                           onClick={() => {
                             setLeaderSelectVisible(true)
@@ -5649,7 +5235,7 @@ export default function PersonasPage(): React.JSX.Element {
                             setTimeout(() => leaderSelectRef.current?.focus(), 0)
                           }}
                         >
-                          <span className="personasLeaderHelpIcon" aria-hidden="true">▾</span>
+                          <span className="personasLeaderHelpIcon" aria-hidden="true">â–¾</span>
                         </button>
                       </>
                     ) : (
@@ -5680,8 +5266,8 @@ export default function PersonasPage(): React.JSX.Element {
                         <button
                           type="button"
                           className="personasLeaderHelpBtn"
-                          title="Volver a modo búsqueda (tipeando)"
-                          aria-label="Volver a modo búsqueda"
+                          title="Volver a modo bÃºsqueda (tipeando)"
+                          aria-label="Volver a modo bÃºsqueda"
                           onClick={() => {
                             setLeaderSelectVisible(false)
                             setLeaderDropdownOpen(false)
@@ -5689,7 +5275,7 @@ export default function PersonasPage(): React.JSX.Element {
                             setLeaderFilterText('')
                           }}
                         >
-                          Volver a búsqueda
+                          Volver a bÃºsqueda
                         </button>
                       </>
                     )}
@@ -5725,7 +5311,7 @@ export default function PersonasPage(): React.JSX.Element {
                   </div>
                   {!leadersLoading && leaders.length === 0 && tab.leaderRole != null && (
                     <span className="personasFieldHint">
-                      No hay {leaderLabel.toLowerCase()}s cargados. Cree primero uno en la pestaña
+                      No hay {leaderLabel.toLowerCase()}s cargados. Cree primero uno en la pestaÃ±a
                       correspondiente.
                     </span>
                   )}
@@ -5776,7 +5362,7 @@ export default function PersonasPage(): React.JSX.Element {
             <p className="personasEmpty">
               {list.length === 0
                 ? `No hay ${tab.label.toLowerCase()} cargados.`
-                : 'No hay resultados para la búsqueda.'}
+                : 'No hay resultados para la bÃºsqueda.'}
             </p>
           ) : (
             <table className="personasTable">
@@ -5784,7 +5370,7 @@ export default function PersonasPage(): React.JSX.Element {
                 <tr>
                   <th>Apellido y Nombre</th>
                   <th>DNI</th>
-                  <th>Teléfono</th>
+                  <th>TelÃ©fono</th>
                   <th>Escuela</th>
                   <th>Mesa</th>
                   {tab.leaderRole != null && (
@@ -5795,7 +5381,7 @@ export default function PersonasPage(): React.JSX.Element {
                           ? 'Referente'
                           : tab.rol === 4
                             ? 'Puntero'
-                            : 'Líder / Grupo'}
+                            : 'LÃ­der / Grupo'}
                     </th>
                   )}
                   <th className="personasTableActions">Acciones</th>
@@ -5831,12 +5417,12 @@ export default function PersonasPage(): React.JSX.Element {
                       </div>
                     </td>
                     <td>{row.DNI}</td>
-                    <td>{row.Telefono ?? '—'}</td>
-                    <td>{row.EscuelaNombre ?? '—'}</td>
-                    <td>{row.NroMesa ?? '—'}</td>
+                    <td>{row.Telefono ?? 'â€”'}</td>
+                    <td>{row.EscuelaNombre ?? 'â€”'}</td>
+                    <td>{row.NroMesa ?? 'â€”'}</td>
                     {tab.leaderRole != null && (
                       <td>
-                        {row.LiderNombre ?? '—'}
+                        {row.LiderNombre ?? 'â€”'}
                       </td>
                     )}
                     <td className="personasTableActions">
@@ -5882,9 +5468,9 @@ export default function PersonasPage(): React.JSX.Element {
                 className="personasPaginationBtn"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                aria-label="Página anterior"
+                aria-label="PÃ¡gina anterior"
               >
-                ←
+                â†
               </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
                 <button
@@ -5902,18 +5488,18 @@ export default function PersonasPage(): React.JSX.Element {
                 className="personasPaginationBtn"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                aria-label="Página siguiente"
+                aria-label="PÃ¡gina siguiente"
               >
-                →
+                â†’
               </button>
               <div className="personasPaginationPerPage">
                 <select
                   value={perPage}
                   onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1) }}
-                  aria-label="Elementos por página"
+                  aria-label="Elementos por pÃ¡gina"
                 >
                   {[7, 10, 15, 25].map((n) => (
-                    <option key={`perpage-${n}`} value={n}>{n} / página</option>
+                    <option key={`perpage-${n}`} value={n}>{n} / pÃ¡gina</option>
                   ))}
                 </select>
               </div>
@@ -5936,7 +5522,7 @@ export default function PersonasPage(): React.JSX.Element {
           <div className="personasConfirmModal">
             <h3 id="personasConfirmTitle" className="personasConfirmTitle">Advertencia</h3>
             <p id="personasConfirmMessage" className="personasConfirmMessage">
-              ¿Cerrar sin guardar? Se perderá todo lo cargado.
+              Â¿Cerrar sin guardar? Se perderÃ¡ todo lo cargado.
             </p>
             <div className="personasConfirmActions">
               <button type="button" className="personasButton personasButtonSecondary" onClick={() => setShowCloseConfirm(false)}>

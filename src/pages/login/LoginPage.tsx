@@ -2,8 +2,8 @@ import React, { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { loginUser } from '../../api/auth'
 import { isAuthenticated } from '../../lib/authStorage'
-import { sanitizeDni } from '../../shared/utils/dni'
 import { sanitizePassword } from '../../features/personas/utils/sanitizers'
+import { sanitizeUsername } from '../../shared/utils/username'
 import './LoginPage.css'
 
 function isNetworkError(err: unknown): boolean {
@@ -12,7 +12,7 @@ function isNetworkError(err: unknown): boolean {
 
 export default function LoginPage(): React.JSX.Element {
   const navigate = useNavigate()
-  const [dni, setDni] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,8 +23,8 @@ export default function LoginPage(): React.JSX.Element {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>): Promise<void> {
     e.preventDefault()
-    if (!dni || !password) {
-      setError('Completá DNI y contraseña')
+    if (!username || !password) {
+      setError('Completá usuario y contraseña')
       return
     }
 
@@ -32,10 +32,10 @@ export default function LoginPage(): React.JSX.Element {
     setError(null)
 
     try {
-      const result = await loginUser(dni, password)
+      const result = await loginUser(username, password)
       if (!result.ok) {
         if (result.status === 401) {
-          setError('DNI o contraseña incorrectos')
+          setError('Usuario o contraseña incorrectos')
         } else {
           setError('No se pudo iniciar sesión')
         }
@@ -57,7 +57,7 @@ export default function LoginPage(): React.JSX.Element {
     <div className="login-page">
       <div className="login-card">
         <h1>Control Territorial</h1>
-        <p className="login-subtitle">Ingresá con tu DNI y contraseña</p>
+        <p className="login-subtitle">Ingresá con tu usuario y contraseña</p>
         <form onSubmit={(e) => void handleSubmit(e)} noValidate>
           {error ? (
             <div className="login-error" role="alert">
@@ -65,16 +65,14 @@ export default function LoginPage(): React.JSX.Element {
             </div>
           ) : null}
           <div className="login-field">
-            <label htmlFor="login-dni">DNI</label>
+            <label htmlFor="login-username">Usuario</label>
             <input
-              id="login-dni"
-              name="dni"
+              id="login-username"
+              name="username"
               type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
               autoComplete="username"
-              value={dni}
-              onChange={(e) => setDni(sanitizeDni(e.target.value))}
+              value={username}
+              onChange={(e) => setUsername(sanitizeUsername(e.target.value))}
               disabled={loading}
             />
           </div>
@@ -96,6 +94,7 @@ export default function LoginPage(): React.JSX.Element {
             </button>
           </div>
         </form>
+        <p className="login-hint">Si migraste desde una versión anterior, tu usuario puede ser tu DNI (solo números).</p>
       </div>
     </div>
   )

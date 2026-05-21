@@ -575,6 +575,48 @@
   box-sizing: border-box;
 }
 
+.usersBadgeActive {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.usersBadgeInactive {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #ffebee;
+  color: #c62828;
+}
+
+.usersRoleBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eef2ff;
+  color: #3949ab;
+}
+
+.usersRoleBadge--1 {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.personasFieldInline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .personasAdminModal {
   background: var(--bg);
   border-radius: 10px;

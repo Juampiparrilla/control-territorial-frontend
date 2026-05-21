@@ -17,11 +17,11 @@ function extractToken(data: LoginResponseBody): string | undefined {
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined
 }
 
-export async function loginUser(dni: string, password: string): Promise<LoginResult> {
+export async function loginUser(username: string, password: string): Promise<LoginResult> {
   const res = await apiFetch('/api/users/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dni, password }),
+    body: JSON.stringify({ username, password }),
     auth: false,
     redirectOn401: false,
   })
