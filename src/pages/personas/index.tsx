@@ -2,12 +2,26 @@ import React from 'react'
 import {
   createPersona,
   deletePersona,
-  getPersonasByRole,
+  getPersonasByRoleCached,
+  invalidatePersonasByRoleCache,
   matchPadronByDni,
   syncPadronActive,
   updatePersona,
   uploadPadron,
 } from './request'
+import {
+  emptyForm,
+  formFromEntity,
+  normalizeOptionalString,
+} from '../../features/personas/utils/formHelpers'
+import {
+  sanitizeDNI,
+  sanitizeEscuela,
+  sanitizeMesa,
+  sanitizeNombreApellido,
+  sanitizeSearch,
+  sanitizeTelefono,
+} from '../../features/personas/utils/sanitizers'
 import {
   PERSONAS_TABS,
   type CreatePersonaDTO,
@@ -16,76 +30,6 @@ import {
   type PadronUploadResultDTO,
 } from './type'
 import './styles.css'
-
-/** Búsqueda: letras (con tildes), números, sin espacio inicial y un solo espacio entre palabras */
-function sanitizeSearch(value: string): string {
-  const allowed = value.replace(/[^a-zA-Z0-9áéíóúüÁÉÍÓÚÜñÑ\s]/g, '')
-  return allowed.replace(/\s+/g, ' ').trimStart()
-}
-
-/** Letras (incl. áéíóúüñ), sin espacio al inicio, un solo espacio entre palabras, máx 50 */
-function sanitizeNombreApellido(value: string): string {
-  const noSpecial = value.replace(/[^a-zA-ZáéíóúüÁÉÍÓÚÜñÑ\s]/g, '')
-  const singleSpace = noSpecial.replace(/\s+/g, ' ').trimStart()
-  return singleSpace.slice(0, 50)
-}
-
-/** Solo dígitos, máx 8 */
-function sanitizeDNI(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 8)
-}
-
-/** Solo números y + (el + solo al inicio), máx 13 caracteres */
-function sanitizeTelefono(value: string): string {
-  const cleaned = value.replace(/[^\d+]/g, '')
-  const digits = cleaned.replace(/\D/g, '')
-  const hasPlus = cleaned.includes('+')
-  const maxDigits = hasPlus ? 12 : 13
-  return hasPlus ? '+' + digits.slice(0, maxDigits) : digits.slice(0, maxDigits)
-}
-
-/** Alfanumérico, tildes, guión -; un solo espacio entre palabras/números, sin espacio al inicio, máx 75 */
-function sanitizeEscuela(value: string): string {
-  const allowed = value.replace(/[^a-zA-Z0-9áéíóúüÁÉÍÓÚÜñÑ\-\s]/g, '')
-  return allowed.replace(/\s+/g, ' ').trimStart().slice(0, 75)
-}
-
-/** Solo dígitos, máx 4 */
-function sanitizeMesa(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 4)
-}
-
-function emptyForm(rol: PersonRole): CreatePersonaDTO {
-  return {
-    Nombre: '',
-    Apellido: '',
-    DNI: '',
-    Rol: rol,
-    Telefono: '',
-    Escuela: '',
-    Mesa: '',
-    LiderId: null,
-  }
-}
-
-function formFromEntity(entity: PersonaResponseDTO): CreatePersonaDTO {
-  const dto: CreatePersonaDTO = {
-    Nombre: entity.Nombre,
-    Apellido: entity.Apellido,
-    DNI: entity.DNI,
-    Rol: entity.Rol,
-    Telefono: entity.Telefono ?? '',
-    Escuela: entity.EscuelaNombre ?? '',
-    Mesa: entity.NroMesa != null ? String(entity.NroMesa) : '',
-    LiderId: entity.LiderId ?? null,
-  }
-  return dto
-}
-
-function normalizeOptionalString(value: string): string | null {
-  const trimmed = value.trim()
-  return trimmed.length === 0 ? null : trimmed
-}
 
 export default function PersonasPage(): React.JSX.Element {
   const [activeTabIndex, setActiveTabIndex] = React.useState(0)
@@ -156,24 +100,10 @@ export default function PersonasPage(): React.JSX.Element {
 
   function openReportStructureInfoDrawer() {
     setShowReportStructureInfoDrawer(true)
-    agentLog({
-      runId: 'post-fix',
-      hypothesisId: 'H_REPORT_STRUCTURE_INFO_DRAWER_OPEN',
-      location: 'src/pages/personas/index.tsx:report-structure-info-open',
-      message: 'Opened report structure info drawer',
-      data: {},
-    })
   }
 
   function closeReportStructureInfoDrawer() {
     setShowReportStructureInfoDrawer(false)
-    agentLog({
-      runId: 'post-fix',
-      hypothesisId: 'H_REPORT_STRUCTURE_INFO_DRAWER_CLOSE',
-      location: 'src/pages/personas/index.tsx:report-structure-info-close',
-      message: 'Closed report structure info drawer',
-      data: {},
-    })
   }
 
   function resetPadronImportState() {
@@ -198,7 +128,7 @@ export default function PersonasPage(): React.JSX.Element {
 
   const fetchAdmins = React.useCallback(() => {
     setAdminListLoading(true)
-    getPersonasByRole(0)
+    getPersonasByRoleCached(0)
       .then((res) => setAdminList(res))
       .catch(() => setAdminList([]))
       .finally(() => setAdminListLoading(false))
@@ -223,17 +153,6 @@ export default function PersonasPage(): React.JSX.Element {
 
   function openAppHelpModal() {
     setShowAppHelpModal(true)
-    // #region agent log
-    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:openAppHelpModal',message:'openAppHelpModal() called',data:{},timestamp:Date.now(),hypothesisId:'H1_help_drawer_open'},)}).catch(()=>{});
-    // #endregion
-    requestAnimationFrame(() => {
-      // #region agent log
-      const drawerEl = document.querySelector<HTMLElement>('.personasHelpAppModal')
-      const closeBtnEl = document.querySelector<HTMLElement>('.personasHelpDrawerClose')
-      const helpBtnSvg = document.querySelector<HTMLElement>('.personasInicioHelpBtnInTitle svg')
-      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:openAppHelpModal:measure',message:'Drawer measurements',data:{drawerWidth:drawerEl?.getBoundingClientRect().width,drawerHeight:drawerEl?.getBoundingClientRect().height,closeBtnWidth:closeBtnEl?.getBoundingClientRect().width,closeBtnHeight:closeBtnEl?.getBoundingClientRect().height,helpBtnSvgWidth:helpBtnSvg?.getBoundingClientRect().width,helpBtnSvgHeight:helpBtnSvg?.getBoundingClientRect().height},timestamp:Date.now(),hypothesisId:'H2_layout_measurements'},)}).catch(()=>{});
-      // #endregion
-    })
   }
 
   function closeAppHelpModal() {
@@ -268,6 +187,7 @@ export default function PersonasPage(): React.JSX.Element {
   async function handleAdminDelete(row: PersonaResponseDTO) {
     try {
       await deletePersona(row.Id)
+      invalidatePersonasByRoleCache()
       setAdminSuccess('Administrador eliminado.')
       fetchAdmins()
     } catch (e) {
@@ -308,6 +228,7 @@ export default function PersonasPage(): React.JSX.Element {
       }
       setAdminShowForm(false)
       setAdminEditingId(null)
+      invalidatePersonasByRoleCache()
       fetchAdmins()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Error al guardar.'
@@ -315,12 +236,6 @@ export default function PersonasPage(): React.JSX.Element {
     } finally {
       setAdminSubmitting(false)
     }
-  }
-
-  function agentLog(payload: { runId: string; hypothesisId: string; location: string; message: string; data?: Record<string, unknown> }) {
-    // #region agent log
-    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:payload.location,message:payload.message,data:payload.data ?? {},timestamp:Date.now(),runId:payload.runId,hypothesisId:payload.hypothesisId})}).catch(()=>{});
-    // #endregion
   }
 
   async function handlePadronAutoFillByDni() {
@@ -341,14 +256,6 @@ export default function PersonasPage(): React.JSX.Element {
         const apellidoEmpty = (prev.Apellido ?? '').trim().length === 0
         const escuelaEmpty = (prev.Escuela ?? '').trim().length === 0
         const mesaEmpty = (prev.Mesa ?? '').trim().length === 0
-
-        agentLog({
-          runId: 'pre-fix',
-          hypothesisId: 'H_PADRON_AUTOFILL',
-          location: 'src/pages/personas/index.tsx:padron-autofill',
-          message: 'Padron match applied to empty fields',
-          data: { dni, nombreEmpty, apellidoEmpty, escuelaEmpty, mesaEmpty },
-        })
 
         return {
           ...prev,
@@ -381,25 +288,9 @@ export default function PersonasPage(): React.JSX.Element {
       const res = await uploadPadron(padronFile)
       setPadronUploadResult(res)
       setPadronStep(2)
-      agentLog({
-        runId: 'debug',
-        hypothesisId: 'H_SYNC_FLOW_UPLOAD',
-        location: 'src/pages/personas/index.tsx:handleUploadPadronClick',
-        message: 'Upload padrón result received',
-        data: { RowsStored: res.RowsStored, PersonasUpdated: res.PersonasUpdated, DnisNotFoundCount: res.DnisNotFound?.length ?? 0 },
-        timestamp: Date.now(),
-      })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error al cargar el padrón.'
       setPadronUploadError(msg)
-      agentLog({
-        runId: 'debug',
-        hypothesisId: 'H_SYNC_FLOW_UPLOAD',
-        location: 'src/pages/personas/index.tsx:handleUploadPadronClick',
-        message: 'Upload padrón error',
-        data: { error: msg },
-        timestamp: Date.now(),
-      })
     } finally {
       setPadronUploadLoading(false)
     }
@@ -412,18 +303,11 @@ export default function PersonasPage(): React.JSX.Element {
     votantes: PersonaResponseDTO[]
   }> {
     const [grupos, referentes, punteros, votantes] = await Promise.all([
-      getPersonasByRole(1),
-      getPersonasByRole(2),
-      getPersonasByRole(3),
-      getPersonasByRole(4),
+      getPersonasByRoleCached(1),
+      getPersonasByRoleCached(2),
+      getPersonasByRoleCached(3),
+      getPersonasByRoleCached(4),
     ])
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H27',
-      location: 'src/pages/personas/index.tsx:fetchReportesData',
-      message: 'Fetched reportes data for unified reports',
-      data: { grupos: grupos.length, referentes: referentes.length, punteros: punteros.length, votantes: votantes.length },
-    })
     return { grupos, referentes, punteros, votantes }
   }
 
@@ -440,22 +324,9 @@ export default function PersonasPage(): React.JSX.Element {
   const fetchList = React.useCallback(() => {
     if (tab.isReportes || tab.id === 'configuracion' || tab.id === 'inicio') return
     setListLoading(true)
-    getPersonasByRole(tab.rol)
+    getPersonasByRoleCached(tab.rol, true)
       .then((res) => {
         setList(res)
-        agentLog({
-          runId: 'debug',
-          hypothesisId: 'H_EAGER_LOADING_INCLUDE_EVIDENCE',
-          location: 'src/pages/personas/index.tsx:fetchList',
-          message: 'Loaded personas list for role',
-          data: {
-            rol: tab.rol,
-            count: res.length,
-            withEscuelaNombre: res.filter((p) => (p.EscuelaNombre ?? '').trim().length > 0).length,
-            withMesa: res.filter((p) => p.NroMesa != null).length,
-          },
-          timestamp: Date.now(),
-        })
       })
       .catch(() => setList([]))
       .finally(() => setListLoading(false))
@@ -469,10 +340,10 @@ export default function PersonasPage(): React.JSX.Element {
     if (tab.id === 'reportes' || tab.id === 'inicio') {
       setStatsLoading(true)
       Promise.all([
-        getPersonasByRole(1),
-        getPersonasByRole(2),
-        getPersonasByRole(3),
-        getPersonasByRole(4),
+        getPersonasByRoleCached(1),
+        getPersonasByRoleCached(2),
+        getPersonasByRoleCached(3),
+        getPersonasByRoleCached(4),
       ])
         .then(([gru, ref, pun, vot]) =>
           setStats({
@@ -493,33 +364,6 @@ export default function PersonasPage(): React.JSX.Element {
     setReportesGrupoId(null)
     setReportesReferenteId(null)
     setReportesPunteroId(null)
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H24',
-      location: 'src/pages/personas/index.tsx:reset-reportes-seleccion',
-      message: 'Reset reportes por seleccion state on enter reportes',
-      data: {},
-    })
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_ORDER',
-      location: 'src/pages/personas/index.tsx:reportes-actions-order',
-      message: 'Reportes por seleccion action buttons order (visual)',
-      data: {
-        order: [
-          'Ver referentes',
-          'Impr. ref.',
-          'Ver punteros (G)',
-          'Impr. punteros (G)',
-          'Ver punteros',
-          'Impr. punteros',
-          'Ver votantes',
-          'Impr. votantes',
-          'Ver P+V',
-          'Impr. P+V',
-        ],
-      },
-    })
   }, [tab.id])
 
   React.useEffect(() => {
@@ -585,18 +429,11 @@ export default function PersonasPage(): React.JSX.Element {
       return
     }
     setLeadersLoading(true)
-    getPersonasByRole(tab.leaderRole)
+    getPersonasByRoleCached(tab.leaderRole)
       .then(setLeaders)
       .catch(() => setLeaders([]))
       .finally(() => {
         setLeadersLoading(false)
-        agentLog({
-          runId: 'pre-fix',
-          hypothesisId: 'H4',
-          location: 'src/pages/personas/index.tsx:leaders-load',
-          message: 'Leaders loaded for tab',
-          data: { tabId: tab.id, leaderRole: tab.leaderRole },
-        })
       })
   }, [tab.leaderRole, tab.isReportes])
 
@@ -604,10 +441,10 @@ export default function PersonasPage(): React.JSX.Element {
     if (!tab.isReportes) return
     setReportesListsLoading(true)
     Promise.all([
-      getPersonasByRole(1),
-      getPersonasByRole(2),
-      getPersonasByRole(3),
-      getPersonasByRole(4),
+      getPersonasByRoleCached(1),
+      getPersonasByRoleCached(2),
+      getPersonasByRoleCached(3),
+      getPersonasByRoleCached(4),
     ])
       .then(([gru, ref, pun, vot]) => {
         setReportesGrupos(gru)
@@ -616,20 +453,6 @@ export default function PersonasPage(): React.JSX.Element {
         setReportesVotantes(vot)
         setReportesEscuelaNombre('')
         setReportesMesaNro('')
-        agentLog({
-          runId: 'pre-fix',
-          hypothesisId: 'H1',
-          location: 'src/pages/personas/index.tsx:reportes-load',
-          message: 'Reportes lists loaded',
-          data: {
-            grupos: gru.length,
-            referentes: ref.length,
-            punteros: pun.length,
-            votantes: vot.length,
-            punterosSinLider: pun.filter((p) => p.LiderId == null).length,
-            votantesSinLider: vot.filter((v) => v.LiderId == null).length,
-          },
-        })
         // No autoseleccionar en "Reportes por selección"
         setReportesGrupoId(null)
         setReportesReferenteId(null)
@@ -648,39 +471,6 @@ export default function PersonasPage(): React.JSX.Element {
       })
       .finally(() => setReportesListsLoading(false))
   }, [tab.isReportes])
-
-  React.useEffect(() => {
-    if (!tab.isReportes) return
-    if (reportesListsLoading) return
-
-    // #region agent log
-    agentLog({
-      runId: 'post-fix',
-      hypothesisId: 'H_REPORTES_CARDS_ONLY_TWO',
-      location: 'src/pages/personas/index.tsx:reportes-cards-only-two',
-      message: 'Reportes tab rendered: only Cantidades totales + Reportes por selección',
-      data: { showCantidadesTotales: true, showReportesPorSeleccion: true, showOtros: false },
-    })
-    // #endregion
-
-    requestAnimationFrame(() => {
-      const filtrosEl = document.querySelector<HTMLElement>('.reportesListadoCardFiltros')
-      const totalesEl = document.querySelector<HTMLElement>('.reportesListadoCardTotales')
-
-      agentLog({
-        runId: 'post-fix',
-        hypothesisId: 'H_REPORTES_CARDS_ORDER_WIDTH',
-        location: 'src/pages/personas/index.tsx:reportes-cards-order-width-measure',
-        message: 'Measure reportes cards order + width',
-        data: {
-          filtrosTop: filtrosEl?.getBoundingClientRect().top ?? null,
-          totalesTop: totalesEl?.getBoundingClientRect().top ?? null,
-          filtrosWidth: filtrosEl?.getBoundingClientRect().width ?? null,
-          totalesWidth: totalesEl?.getBoundingClientRect().width ?? null,
-        },
-      })
-    })
-  }, [tab.isReportes, reportesListsLoading, reportesGrupoId, reportesReferenteId, reportesPunteroId])
 
   const reportesGruposSorted = React.useMemo(() => {
     const sortByApellidoNombre = (a: PersonaResponseDTO, b: PersonaResponseDTO) => {
@@ -778,13 +568,6 @@ export default function PersonasPage(): React.JSX.Element {
     if (isValid) return
     if (reportesPunteroId != null) {
       setReportesPunteroId(null)
-      agentLog({
-        runId: 'pre-fix',
-        hypothesisId: 'H19',
-        location: 'src/pages/personas/index.tsx:reportes-sync-puntero',
-        message: 'Synced puntero after filter options change',
-        data: { referenteId: reportesReferenteId, grupoId: reportesGrupoId, options: allowed.length },
-      })
     }
   }, [tab.isReportes, reportesPunterosOptions, reportesPunteroId, reportesReferenteId, reportesGrupoId])
 
@@ -793,13 +576,6 @@ export default function PersonasPage(): React.JSX.Element {
     if (!tab.isReportes) return
     setReportesReferenteId(null)
     setReportesPunteroId(null)
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H25',
-      location: 'src/pages/personas/index.tsx:reportes-sync-referente',
-      message: 'Reset referente/puntero after grupo change',
-      data: { grupoId: reportesGrupoId },
-    })
   }, [tab.isReportes, reportesGrupoId])
 
   const reportesVotantesDePuntero = React.useMemo(() => {
@@ -852,19 +628,6 @@ export default function PersonasPage(): React.JSX.Element {
           votos,
         }
       })
-
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H2',
-      location: 'src/pages/personas/index.tsx:cantidades-totales-memo',
-      message: 'Cantidades totales computed',
-      data: {
-        rows: rows.length,
-        totalPunteros: rows.reduce((a, r) => a + r.punteros, 0),
-        totalVotos: rows.reduce((a, r) => a + r.votos, 0),
-        top3: rows.slice(0, 3),
-      },
-    })
 
     return rows
   }, [reportesReferentes, reportesPunteros, reportesVotantes])
@@ -924,29 +687,7 @@ export default function PersonasPage(): React.JSX.Element {
     setError(null)
     setSuccessMessage(null)
     setLeaderSelectVisible(false)
-    requestAnimationFrame(() => {
-      // #region agent log
-      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
-        body: JSON.stringify({
-          sessionId: 'b35ed6',
-          location: 'PersonasPage:index.tsx:openCreate:measureSaveIcon',
-          message: 'Measure submit save icon',
-          data: {
-            submitBtnSvgRect: (() => {
-              const el = document.querySelector<SVGElement>('button[type="submit"] svg')
-              const r = el?.getBoundingClientRect()
-              return r ? { width: r.width, height: r.height } : null
-            })(),
-          },
-          timestamp: Date.now(),
-          runId: 'post-fix',
-          hypothesisId: 'H_SAVE_ICON_MEASURE',
-        }),
-      }).catch(() => {})
-      // #endregion
-    })
+    requestAnimationFrame(() => {    })
   }
 
   /** Genera el HTML del reporte jerárquico (referentes / punteros / votantes) */
@@ -998,17 +739,7 @@ export default function PersonasPage(): React.JSX.Element {
         if (!groups.has(l.Id)) {
           groups.set(l.Id, { leaderName: `${l.Nombre} ${l.Apellido}`.trim(), persons: [] })
         }
-      })
-      // #region agent log
-      agentLog({
-        runId: 'pre-fix',
-        hypothesisId: 'H20',
-        location: 'src/pages/personas/index.tsx:buildReportHtml-allLeaders',
-        message: 'Included empty leaders in report',
-        data: { rol, leaders: leadersToInclude.length, groups: groups.size, autoFromGrupos: rol === 2 && !options?.allLeaders },
-      })
-      // #endregion
-    }
+      })    }
 
     const groupEntries = Array.from(groups.entries()).sort(([, a], [, b]) => {
       const aParts = a.leaderName.split(' ')
@@ -1019,22 +750,6 @@ export default function PersonasPage(): React.JSX.Element {
       if (aLast > bLast) return 1
       return a.leaderName.localeCompare(b.leaderName, 'es', { sensitivity: 'base' })
     })
-
-    // #region agent log
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_REF_REPORT_GROUP_COVERAGE',
-      location: 'src/pages/personas/index.tsx:buildReportHtml-group-coverage',
-      message: 'Listado report grouped leaders coverage',
-      data: {
-        rol,
-        includeRolColumn,
-        totalLeaders: groupEntries.length,
-        emptyLeaders: groupEntries.filter(([, g]) => g.persons.length === 0).length,
-      },
-    })
-    // #endregion
-
     const isReferentesReport = rol === 2
     const emptyCell = `<span class="reportEmptyValue">-</span>`
     const colspan = includeRolColumn ? 7 : 6
@@ -1210,30 +925,7 @@ export default function PersonasPage(): React.JSX.Element {
           </div>`
 
     let referentesByGroupPrintHtml = ''
-    if (isReferentesByGroupPrint) {
-      // #region agent log
-      agentLog({
-        runId: 'post-fix',
-        hypothesisId: 'H_REF_PRINT_BY_GROUP_BUILD',
-        location: 'src/pages/personas/index.tsx:buildReportHtml-byGroup',
-        message: 'Building referentes report HTML with one print section per group',
-        data: { groupCount: groupEntries.length },
-      })
-      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
-        body: JSON.stringify({
-          sessionId: 'b35ed6',
-          location: 'src/pages/personas/index.tsx:buildReportHtml-byGroup-fetch',
-          message: 'referentesPrintLayout byGroup',
-          data: { groupCount: groupEntries.length },
-          timestamp: Date.now(),
-          runId: 'post-fix',
-          hypothesisId: 'H_REF_PRINT_BY_GROUP_FETCH',
-        }),
-      }).catch(() => {})
-      // #endregion
-      const lastIdx = groupEntries.length - 1
+    if (isReferentesByGroupPrint) {      const lastIdx = groupEntries.length - 1
       referentesByGroupPrintHtml =
         groupEntries
           .map((entry, i) => {
@@ -1676,14 +1368,6 @@ export default function PersonasPage(): React.JSX.Element {
             ${jerarquiaHeaderBlock(null)}
             ${grupoResumenTableHtml}
           </div>`
-
-      agentLog({
-        runId: 'post-fix',
-        hypothesisId: 'H_JERARQUIA_PRINT_BY_PUN',
-        location: 'src/pages/personas/index.tsx:buildJerarquiaReportHtml-byPuntero',
-        message: 'Built jerarquia report with one print section per puntero',
-        data: { sections: sections.length, totalReferentes, totalPunteros, totalVotantes },
-      })
 
       return `
       <!DOCTYPE html>
@@ -2209,13 +1893,6 @@ export default function PersonasPage(): React.JSX.Element {
     }
 
     const grupos = [...reportesGrupos].sort(sortByApellidoNombre)
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_GRUPOS_ONLY_HTML',
-      location: 'src/pages/personas/index.tsx:buildGruposOnlyReportHtml',
-      message: 'Building grupos-only report (flat list)',
-      data: { groupsCount: grupos.length },
-    })
 
     const emptyValue = '<span class="reportEmptyValue">-</span>'
     const rowsHtml = grupos
@@ -2506,14 +2183,6 @@ export default function PersonasPage(): React.JSX.Element {
           </table>
           </div>`
 
-      agentLog({
-        runId: 'post-fix',
-        hypothesisId: 'H_PUNTEROS_PRINT_BY_REF',
-        location: 'src/pages/personas/index.tsx:buildPunterosPorGrupoReportHtml-byReferente',
-        message: 'Built punteros report with one print section per referente',
-        data: { sections: sections.length, totalReferentes, totalPunteros },
-      })
-
       return `
       <!DOCTYPE html>
       <html lang="es">
@@ -2690,43 +2359,7 @@ export default function PersonasPage(): React.JSX.Element {
       if (gi < grupos.length - 1) {
         rows.push('<tr class="reportGroupSpacer"><td colspan="7"></td></tr>')
       }
-    })
-
-    // #region agent log
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H22',
-      location: 'src/pages/personas/index.tsx:build-punteros-por-grupo',
-      message: 'Building punteros report grouped by grupo then referente',
-      data: { grupos: reportesGrupos.length, referentes: reportesReferentes.length, punteros: reportesPunteros.length },
-    })
-    // #endregion
-    // #region agent log
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_PUNTEROS_EMPTY_STATES',
-      location: 'src/pages/personas/index.tsx:build-punteros-por-grupo-empty-states',
-      message: 'Computed empty states for punteros report',
-      data: {
-        gruposSinReferentes: grupos.filter((g) => (referentesByGrupo.get(g.Id) ?? []).length === 0).length,
-        referentesSinPunteros: referentes.filter((r) => (punterosByReferente.get(r.Id) ?? []).length === 0).length,
-      },
-    })
-    // #endregion
-    // #region agent log
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_PUNTEROS_VISUAL_REFINEMENT',
-      location: 'src/pages/personas/index.tsx:build-punteros-por-grupo-visual-refinement',
-      message: 'Applied visual refinement for referente blocks and puntero hierarchy',
-      data: {
-        referenteSpacerEnabled: true,
-        punteroIndentLevel: 3,
-        punteroInfoStateHighlight: true,
-      },
-    })
-    // #endregion
-
+    })    // #endregion    // #endregion
     return `
       <!DOCTYPE html>
       <html lang="es">
@@ -2838,68 +2471,6 @@ export default function PersonasPage(): React.JSX.Element {
     w.focus()
   }
 
-  function viewReportFromReportes(rol: 2 | 3 | 4) {
-    const list = rol === 2 ? reportesReferentes : rol === 3 ? reportesPunteros : reportesVotantes
-    if (list.length === 0) {
-      window.alert('No hay datos para mostrar.')
-      return
-    }
-    if (rol === 3) {
-      openReportWindow(buildPunterosPorGrupoReportHtml())
-      return
-    }
-
-    const leaderById =
-      rol === 2
-        ? new Map(reportesGrupos.map((g) => [g.Id, g]))
-        : new Map(reportesPunteros.map((p) => [p.Id, p]))
-    openReportWindow(buildReportHtml(rol, list, leaderById, { groupName: 'Varios' }))
-  }
-
-  function printReportFromReportes(rol: 2 | 3 | 4) {
-    const list = rol === 2 ? reportesReferentes : rol === 3 ? reportesPunteros : reportesVotantes
-    if (list.length === 0) {
-      window.alert('No hay datos para imprimir.')
-      return
-    }
-    if (rol === 3) {
-      const w = window.open('', '_blank')
-      if (!w) return
-      w.document.open()
-      w.document.write(buildPunterosPorGrupoReportHtml())
-      w.document.close()
-      w.focus()
-      w.print()
-      return
-    }
-
-    const leaderById =
-      rol === 2
-        ? new Map(reportesGrupos.map((g) => [g.Id, g]))
-        : new Map(reportesPunteros.map((p) => [p.Id, p]))
-    const w = window.open('', '_blank')
-    if (!w) return
-    w.document.open()
-    w.document.write(buildReportHtml(rol, list, leaderById, { groupName: 'Varios' }))
-    w.document.close()
-    w.focus()
-    w.print()
-  }
-
-  function viewJerarquiaReport() {
-    openReportWindow(buildJerarquiaReportHtml())
-  }
-
-  function printJerarquiaReport() {
-    const w = window.open('', '_blank')
-    if (!w) return
-    w.document.open()
-    w.document.write(buildJerarquiaReportHtml())
-    w.document.close()
-    w.focus()
-    w.print()
-  }
-
   type ReportesSeleccionMode = 'todos' | 'grupo' | 'referente' | 'puntero'
 
   function getReportesSeleccionModeAndHeaderLine(): { mode: ReportesSeleccionMode; headerPathLine: string } {
@@ -2953,13 +2524,6 @@ export default function PersonasPage(): React.JSX.Element {
 
   function viewReportesPorSeleccion() {
     const { mode, headerPathLine } = getReportesSeleccionModeAndHeaderLine()
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_SEL_MODE_VIEW',
-      location: 'src/pages/personas/index.tsx:view-reportes-por-seleccion',
-      message: 'Reportes por seleccion: view branch decided',
-      data: { mode, grupoId: reportesGrupoId, referenteId: reportesReferenteId, punteroId: reportesPunteroId, headerPathLine },
-    })
 
     if (mode === 'todos') {
       openReportWindow(buildGruposOnlyReportHtml({ headerPathLine }))
@@ -2983,13 +2547,6 @@ export default function PersonasPage(): React.JSX.Element {
 
   function printReportesPorSeleccion() {
     const { mode, headerPathLine } = getReportesSeleccionModeAndHeaderLine()
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_SEL_MODE_PRINT',
-      location: 'src/pages/personas/index.tsx:print-reportes-por-seleccion',
-      message: 'Reportes por seleccion: print branch decided',
-      data: { mode, grupoId: reportesGrupoId, referenteId: reportesReferenteId, punteroId: reportesPunteroId, headerPathLine },
-    })
 
     if (mode === 'todos') {
       const w = window.open('', '_blank')
@@ -3474,44 +3031,14 @@ export default function PersonasPage(): React.JSX.Element {
     `
   }
 
-  function viewPersonasPorEscuelaMesaReport() {
-    // #region agent log
-    agentLog({
-      runId: 'post-fix',
-      hypothesisId: 'H_ESCUELA_MESA_VIEW',
-      location: 'src/pages/personas/index.tsx:view-escuela-mesa-report',
-      message: 'View report by escuela/mesa',
-      data: {
-        escuela: reportesEscuelaNombre || 'TODAS',
-        mesa: reportesMesaNro || 'TODAS',
-        rows: reportesPersonasByEscuelaMesa.length,
-        groupedByEscuela: reportesEscuelaNombre === '',
-      },
-    })
-    // #endregion
-    if (reportesPersonasByEscuelaMesa.length === 0) {
+  function viewPersonasPorEscuelaMesaReport() {    if (reportesPersonasByEscuelaMesa.length === 0) {
       window.alert('No hay personas para mostrar con ese filtro.')
       return
     }
     openReportWindow(buildPersonasPorEscuelaMesaReportHtml())
   }
 
-  function printPersonasPorEscuelaMesaReport() {
-    // #region agent log
-    agentLog({
-      runId: 'post-fix',
-      hypothesisId: 'H_ESCUELA_MESA_PRINT',
-      location: 'src/pages/personas/index.tsx:print-escuela-mesa-report',
-      message: 'Print report by escuela/mesa',
-      data: {
-        escuela: reportesEscuelaNombre || 'TODAS',
-        mesa: reportesMesaNro || 'TODAS',
-        rows: reportesPersonasByEscuelaMesa.length,
-        groupedByEscuela: reportesEscuelaNombre === '',
-      },
-    })
-    // #endregion
-    if (reportesPersonasByEscuelaMesa.length === 0) {
+  function printPersonasPorEscuelaMesaReport() {    if (reportesPersonasByEscuelaMesa.length === 0) {
       window.alert('No hay personas para imprimir con ese filtro.')
       return
     }
@@ -3648,21 +3175,6 @@ export default function PersonasPage(): React.JSX.Element {
     const totalPunteros = cantidadesTotalesRows.reduce((a, r) => a + r.punteros, 0)
     const totalVotos = cantidadesTotalesRows.reduce((a, r) => a + r.votos, 0)
     const totalGeneral = totalPunteros + totalVotos
-
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H3',
-      location: 'src/pages/personas/index.tsx:build-cantidades-totales-html',
-      message: 'Building cantidades totales HTML',
-      data: { rows: cantidadesTotalesRows.length, totalReferentes, totalPunteros, totalVotos, totalGeneral },
-    })
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H23',
-      location: 'src/pages/personas/index.tsx:build-cantidades-totales-html-groups',
-      message: 'Cantidades totales grouped by grupo',
-      data: { grupos: grupos.length, groupSummaries },
-    })
 
     return `
       <!DOCTYPE html>
@@ -3837,18 +3349,6 @@ export default function PersonasPage(): React.JSX.Element {
         </tr>`)
     }
 
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H14',
-      location: 'src/pages/personas/index.tsx:build-punteros-votos-ref',
-      message: 'Building punteros+votantes for referente',
-      data: {
-        referenteId: reportesReferenteId,
-        punteros: reportesPunterosDeReferente.length,
-        votantes: reportesVotantesDeReferente.length,
-      },
-    })
-
     return `
       <!DOCTYPE html>
       <html lang="es">
@@ -3956,13 +3456,6 @@ export default function PersonasPage(): React.JSX.Element {
 
   function viewVotantesDePuntero() {
     if (reportesPunteroId == null) return
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H16',
-      location: 'src/pages/personas/index.tsx:view-votantes-pun',
-      message: 'View votantes de puntero',
-      data: { punteroId: reportesPunteroId, count: reportesVotantesDePuntero.length },
-    })
     const pun = reportesPunteros.find((p) => p.Id === reportesPunteroId) ?? null
     const ref = pun?.LiderId != null ? reportesReferentes.find((r) => r.Id === pun.LiderId) ?? null : null
     const grupo = ref?.LiderId != null ? reportesGrupos.find((g) => g.Id === ref.LiderId) ?? null : null
@@ -3986,21 +3479,6 @@ export default function PersonasPage(): React.JSX.Element {
     const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
     const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
     const allLeadersForReport = grupo ? [grupo] : []
-    // #region agent log
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_REF_LIST_VIEW_INPUTS',
-      location: 'src/pages/personas/index.tsx:viewReferentesDeGrupo',
-      message: 'Preparing referentes report for selected group',
-      data: {
-        selectedGroupId: reportesGrupoId,
-        selectedGroupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : null,
-        refsForSelectedGroup: list.length,
-        totalGroups: reportesGrupos.length,
-        totalReferentes: reportesReferentes.length,
-      },
-    })
-    // #endregion
     openReportWindow(
       buildReportHtml(2, list, leaderById, {
         groupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : '—',
@@ -4016,21 +3494,6 @@ export default function PersonasPage(): React.JSX.Element {
     const list = reportesReferentes.filter((r) => r.LiderId === reportesGrupoId)
     const leaderById = new Map(reportesGrupos.map((g) => [g.Id, g]))
     const allLeadersForReport = grupo ? [grupo] : []
-    // #region agent log
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H_REF_LIST_PRINT_INPUTS',
-      location: 'src/pages/personas/index.tsx:printReferentesDeGrupo',
-      message: 'Preparing referentes report print for selected group',
-      data: {
-        selectedGroupId: reportesGrupoId,
-        selectedGroupName: grupo ? `${grupo.Apellido}, ${grupo.Nombre}` : null,
-        refsForSelectedGroup: list.length,
-        totalGroups: reportesGrupos.length,
-        totalReferentes: reportesReferentes.length,
-      },
-    })
-    // #endregion
     const w = window.open('', '_blank')
     if (!w) return
     w.document.open()
@@ -4048,13 +3511,6 @@ export default function PersonasPage(): React.JSX.Element {
 
   function printVotantesDePuntero() {
     if (reportesPunteroId == null) return
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H16',
-      location: 'src/pages/personas/index.tsx:print-votantes-pun',
-      message: 'Print votantes de puntero',
-      data: { punteroId: reportesPunteroId, count: reportesVotantesDePuntero.length },
-    })
     const w = window.open('', '_blank')
     if (!w) return
     w.document.open()
@@ -4116,15 +3572,6 @@ export default function PersonasPage(): React.JSX.Element {
       fetchReportesData()
         .then(({ grupos, referentes }) => {
           const leaderById = new Map(grupos.map((g) => [g.Id, g]))
-          // #region agent log
-          agentLog({
-            runId: 'post-fix',
-            hypothesisId: 'H_REF_TAB_VIEW_ALL_GROUPS',
-            location: 'src/pages/personas/index.tsx:handleViewReport-referentes',
-            message: 'Building referentes report from Referentes tab with all groups',
-            data: { grupos: grupos.length, referentes: referentes.length },
-          })
-          // #endregion
           openReportWindow(buildReportHtml(2, referentes, leaderById, { groupName: 'Varios', allLeaders: grupos }))
         })
         .catch(() => window.alert('No se pudo generar el reporte.'))
@@ -4231,37 +3678,11 @@ export default function PersonasPage(): React.JSX.Element {
 
   function executeReferentesPrint(layout: 'all' | 'byGroup') {
     setShowReferentesPrintModal(false)
-    // #region agent log
-    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
-      body: JSON.stringify({
-        sessionId: 'b35ed6',
-        location: 'src/pages/personas/index.tsx:executeReferentesPrint',
-        message: 'Referentes print layout chosen',
-        data: { layout },
-        timestamp: Date.now(),
-        runId: 'post-fix',
-        hypothesisId: 'H_REF_PRINT_MODAL_CHOICE',
-      }),
-    }).catch(() => {})
-    // #endregion
     fetchReportesData()
       .then(({ grupos, referentes }) => {
         const leaderById = new Map(grupos.map((g) => [g.Id, g]))
         const w = window.open('', '_blank')
         if (!w) return
-        agentLog({
-          runId: 'post-fix',
-          hypothesisId: 'H_REF_TAB_PRINT_ALL_GROUPS',
-          location: 'src/pages/personas/index.tsx:executeReferentesPrint-print',
-          message: 'Printing referentes report from Referentes tab',
-          data: {
-            grupos: grupos.length,
-            referentes: referentes.length,
-            layout,
-          },
-        })
         w.document.open()
         w.document.write(
           buildReportHtml(2, referentes, leaderById, {
@@ -4283,18 +3704,6 @@ export default function PersonasPage(): React.JSX.Element {
       .then(({ grupos, referentes, punteros }) => {
         const w = window.open('', '_blank')
         if (!w) return
-        agentLog({
-          runId: 'post-fix',
-          hypothesisId: 'H_PUN_TAB_PRINT',
-          location: 'src/pages/personas/index.tsx:executePunterosPrint',
-          message: 'Printing punteros report from Punteros tab',
-          data: {
-            grupos: grupos.length,
-            referentes: referentes.length,
-            punteros: punteros.length,
-            layout,
-          },
-        })
         w.document.open()
         w.document.write(
           buildPunterosPorGrupoReportHtml(
@@ -4315,19 +3724,6 @@ export default function PersonasPage(): React.JSX.Element {
       .then(({ grupos, referentes, punteros, votantes }) => {
         const w = window.open('', '_blank')
         if (!w) return
-        agentLog({
-          runId: 'post-fix',
-          hypothesisId: 'H_VOT_TAB_PRINT',
-          location: 'src/pages/personas/index.tsx:executeVotantesPrint',
-          message: 'Printing jerarquia report from Votantes tab',
-          data: {
-            grupos: grupos.length,
-            referentes: referentes.length,
-            punteros: punteros.length,
-            votantes: votantes.length,
-            layout,
-          },
-        })
         w.document.open()
         w.document.write(
           buildJerarquiaReportHtml(
@@ -4356,28 +3752,6 @@ export default function PersonasPage(): React.JSX.Element {
 
     if (tab.rol === 2) {
       setShowReferentesPrintModal(true)
-      // #region agent log
-      agentLog({
-        runId: 'post-fix',
-        hypothesisId: 'H_REF_PRINT_MODAL_OPEN',
-        location: 'src/pages/personas/index.tsx:handlePrintReport-referentes-modal-open',
-        message: 'Set referentes print modal open (modal must render under personasPanel, not only configuracion tab)',
-        data: { tabId: tab.id },
-      })
-      fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b35ed6' },
-        body: JSON.stringify({
-          sessionId: 'b35ed6',
-          location: 'src/pages/personas/index.tsx:handlePrintReport-referentes-modal-open',
-          message: 'Opened referentes print options modal',
-          data: { tabId: tab.id },
-          timestamp: Date.now(),
-          runId: 'post-fix',
-          hypothesisId: 'H_REF_PRINT_MODAL_OPEN',
-        }),
-      }).catch(() => {})
-      // #endregion
       return
     }
     if (tab.rol === 3) {
@@ -4475,43 +3849,14 @@ export default function PersonasPage(): React.JSX.Element {
   }
 
   function openEdit(entity: PersonaResponseDTO) {
-    agentLog({
-      runId: 'pre-fix',
-      hypothesisId: 'H5',
-      location: 'src/pages/personas/index.tsx:openEdit',
-      message: 'Opening edit form',
-      data: {
-        entityId: entity.Id,
-        entityRol: entity.Rol,
-        entityLiderId: entity.LiderId,
-        entityLiderNombre: entity.LiderNombre,
-        tabId: tab.id,
-        tabRol: tab.rol,
-        tabLeaderRole: tab.leaderRole,
-      },
-    })
     setEditingId(entity.Id)
     const nextForm = formFromEntity(entity)
-    agentLog({
-      runId: 'post-fix',
-      hypothesisId: 'H2',
-      location: 'src/pages/personas/index.tsx:openEdit-nextForm',
-      message: 'Computed form from entity',
-      data: { nextFormLiderId: nextForm.LiderId ?? null, nextFormRol: nextForm.Rol },
-    })
     setForm(nextForm)
     if (tab.leaderRole != null) {
       setLeaderDropdownOpen(false)
       setLeaderIsTyping(false)
       setLeaderFilterText('')
       setLeaderSelectVisible(false)
-      agentLog({
-        runId: 'post-fix',
-        hypothesisId: 'H6',
-        location: 'src/pages/personas/index.tsx:openEdit-leaderText',
-        message: 'Edit opened with existing leader',
-        data: { entityId: entity.Id, liderId: entity.LiderId ?? null, liderNombre: entity.LiderNombre ?? '' },
-      })
     }
     setShowForm(true)
     setError(null)
@@ -4595,6 +3940,7 @@ export default function PersonasPage(): React.JSX.Element {
         setSuccessMessage('Creado correctamente.')
         setForm(emptyForm(tab.rol))
       }
+      invalidatePersonasByRoleCache()
       fetchList()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar.')
@@ -4608,6 +3954,7 @@ export default function PersonasPage(): React.JSX.Element {
     if (!window.confirm(`¿Eliminar a ${name}?`)) return
     try {
       await deletePersona(entity.Id)
+      invalidatePersonasByRoleCache()
       fetchList()
       if (editingId === entity.Id) closeForm()
     } catch (err) {
@@ -4788,14 +4135,6 @@ export default function PersonasPage(): React.JSX.Element {
                   onClick={openAppHelpModal}
                   title="Ayuda para configuración inicial de la aplicación"
                   aria-label="Ayuda para configuración inicial de la aplicación"
-                  onMouseEnter={(e) => {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:help-btn-hover',message:'help button hover',data:{tabId:tab.id},timestamp:Date.now(),hypothesisId:'H6_help_btn_hover_tooltip'},)}).catch(()=>{});
-                    const target = e.currentTarget as HTMLElement
-                    const cs = window.getComputedStyle(target)
-                    fetch('http://127.0.0.1:7743/ingest/9817c7ed-4593-4ad7-9571-e38db2bdfd68',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b35ed6'},body:JSON.stringify({sessionId:'b35ed6',location:'PersonasPage:index.tsx:help-btn-hover:computedStyle',message:'computed styles for help button',data:{borderWidth:cs.borderWidth,borderStyle:cs.borderStyle,backgroundColor:cs.backgroundColor,padding:cs.padding,display:cs.display,height:cs.height,width:cs.width},timestamp:Date.now(),hypothesisId:'H7_help_btn_contour_style'},)}).catch(()=>{});
-                    // #endregion
-                  }}
                 >
                   <span className="personasHelpInfoIBadge" aria-hidden="true">
                     i
@@ -5372,29 +4711,11 @@ export default function PersonasPage(): React.JSX.Element {
                               setPadronSyncResult(null)
                               try {
                                 const res = await syncPadronActive()
+                                invalidatePersonasByRoleCache()
                                 setPadronSyncResult(res)
-                                agentLog({
-                                  runId: 'debug',
-                                  hypothesisId: 'H_SYNC_FLOW_SYNC_ENDPOINT',
-                                  location: 'src/pages/personas/index.tsx:padron-modal-sync-onclick',
-                                  message: 'Sync padrón result received',
-                                  data: {
-                                    PersonasUpdated: res.PersonasUpdated,
-                                    DnisNotFoundCount: res.DnisNotFound?.length ?? 0,
-                                  },
-                                  timestamp: Date.now(),
-                                })
                               } catch (e) {
                                 const msg = e instanceof Error ? e.message : 'Error al sincronizar.'
                                 setPadronSyncError(msg)
-                                agentLog({
-                                  runId: 'debug',
-                                  hypothesisId: 'H_SYNC_FLOW_SYNC_ENDPOINT',
-                                  location: 'src/pages/personas/index.tsx:padron-modal-sync-onclick',
-                                  message: 'Sync padrón error',
-                                  data: { error: msg },
-                                  timestamp: Date.now(),
-                                })
                               } finally {
                                 setPadronSyncLoading(false)
                               }
@@ -5838,17 +5159,7 @@ export default function PersonasPage(): React.JSX.Element {
                           onChange={(e) => {
                             const escuela = e.target.value
                             setReportesEscuelaNombre(escuela)
-                            setReportesMesaNro('')
-                            // #region agent log
-                            agentLog({
-                              runId: 'post-fix',
-                              hypothesisId: 'H_ESCUELA_FILTER_CHANGE',
-                              location: 'src/pages/personas/index.tsx:select-escuela-report',
-                              message: 'Escuela filter changed in report by escuela/mesa',
-                              data: { escuela: escuela || 'TODAS' },
-                            })
-                            // #endregion
-                          }}
+                            setReportesMesaNro('')                          }}
                         >
                           <option value="">Todas las escuelas</option>
                           {reportesEscuelasOptions.map((escuela) => (
@@ -5867,17 +5178,7 @@ export default function PersonasPage(): React.JSX.Element {
                           disabled={!reportesEscuelaNombre}
                           onChange={(e) => {
                             const mesa = e.target.value
-                            setReportesMesaNro(mesa)
-                            // #region agent log
-                            agentLog({
-                              runId: 'post-fix',
-                              hypothesisId: 'H_MESA_FILTER_CHANGE',
-                              location: 'src/pages/personas/index.tsx:select-mesa-report',
-                              message: 'Mesa filter changed in report by escuela/mesa',
-                              data: { escuela: reportesEscuelaNombre || 'TODAS', mesa: mesa || 'TODAS' },
-                            })
-                            // #endregion
-                          }}
+                            setReportesMesaNro(mesa)                          }}
                         >
                           <option value="">{reportesEscuelaNombre ? 'Todas las mesas' : 'Primero seleccioná una escuela'}</option>
                           {reportesMesasOptions.map((mesa) => (
@@ -5967,13 +5268,6 @@ export default function PersonasPage(): React.JSX.Element {
                         onChange={(e) => {
                           const val = e.target.value === '' ? null : Number(e.target.value)
                           setReportesGrupoId(val)
-                          agentLog({
-                            runId: 'pre-fix',
-                            hypothesisId: 'H26',
-                            location: 'src/pages/personas/index.tsx:reportes-select-gru',
-                            message: 'Selected grupo for reports',
-                            data: { grupoId: val },
-                          })
                         }}
                       >
                       <option value="">Todos los grupos</option>
@@ -5993,13 +5287,6 @@ export default function PersonasPage(): React.JSX.Element {
                           onChange={(e) => {
                             const val = e.target.value === '' ? null : Number(e.target.value)
                             setReportesReferenteId(val)
-                            agentLog({
-                              runId: 'pre-fix',
-                              hypothesisId: 'H17',
-                              location: 'src/pages/personas/index.tsx:reportes-select-ref',
-                              message: 'Selected referente for reports',
-                              data: { referenteId: val },
-                            })
                           }}
                         >
                           <option value="">
@@ -6025,13 +5312,6 @@ export default function PersonasPage(): React.JSX.Element {
                           onChange={(e) => {
                             const val = e.target.value === '' ? null : Number(e.target.value)
                             setReportesPunteroId(val)
-                            agentLog({
-                              runId: 'pre-fix',
-                              hypothesisId: 'H18',
-                              location: 'src/pages/personas/index.tsx:reportes-select-pun',
-                              message: 'Selected puntero for reports',
-                              data: { punteroId: val },
-                            })
                           }}
                         >
                           <option value="">
@@ -6324,13 +5604,6 @@ export default function PersonasPage(): React.JSX.Element {
                               setForm((s) => ({ ...s, LiderId: null }))
                               setLeaderIsTyping(true)
                               setLeaderFilterText('')
-                              agentLog({
-                                runId: 'post-fix',
-                                hypothesisId: 'H13',
-                                location: 'src/pages/personas/index.tsx:leader-clear-backspace',
-                                message: 'Cleared selected leader via backspace/delete',
-                                data: { prevLiderId: form.LiderId },
-                              })
                               return
                             }
                             if (
@@ -6345,13 +5618,6 @@ export default function PersonasPage(): React.JSX.Element {
                               setLeaderIsTyping(false)
                               setLeaderDropdownOpen(false)
                               setLeaderSelectVisible(false)
-                              agentLog({
-                                runId: 'post-fix',
-                                hypothesisId: 'H8',
-                                location: 'src/pages/personas/index.tsx:leader-autocomplete-enter',
-                                message: 'Selected leader from autocomplete (enter/tab)',
-                                data: { liderId: first.Id },
-                              })
                               if (e.key === 'Tab') {
                                 setTimeout(() => leaderSelectRef.current?.focus(), 0)
                               }
@@ -6380,13 +5646,6 @@ export default function PersonasPage(): React.JSX.Element {
                             setLeaderDropdownOpen(false)
                             setLeaderIsTyping(false)
                             setLeaderFilterText('')
-                            agentLog({
-                              runId: 'post-fix',
-                              hypothesisId: 'H11',
-                              location: 'src/pages/personas/index.tsx:leader-help-toggle',
-                              message: 'Show leader select (hide input)',
-                              data: { nextVisible: true },
-                            })
                             setTimeout(() => leaderSelectRef.current?.focus(), 0)
                           }}
                         >
@@ -6405,13 +5664,6 @@ export default function PersonasPage(): React.JSX.Element {
                             setLeaderIsTyping(false)
                             setLeaderFilterText('')
                             setLeaderDropdownOpen(false)
-                            agentLog({
-                              runId: 'post-fix',
-                              hypothesisId: 'H10',
-                              location: 'src/pages/personas/index.tsx:leader-select-change',
-                              message: 'Selected leader from select',
-                              data: { liderId: val },
-                            })
                           }}
                           disabled={leadersLoading}
                           title={`Lista desplegable de ${leaderLabel}`}
@@ -6435,13 +5687,6 @@ export default function PersonasPage(): React.JSX.Element {
                             setLeaderDropdownOpen(false)
                             setLeaderIsTyping(false)
                             setLeaderFilterText('')
-                            agentLog({
-                              runId: 'post-fix',
-                              hypothesisId: 'H12',
-                              location: 'src/pages/personas/index.tsx:leader-help-toggle-back',
-                              message: 'Hide leader select (show input)',
-                              data: { nextVisible: false },
-                            })
                           }}
                         >
                           Volver a búsqueda
@@ -6469,13 +5714,6 @@ export default function PersonasPage(): React.JSX.Element {
                                 setLeaderIsTyping(false)
                                 setLeaderDropdownOpen(false)
                                 setLeaderSelectVisible(false)
-                                agentLog({
-                                  runId: 'post-fix',
-                                  hypothesisId: 'H9',
-                                  location: 'src/pages/personas/index.tsx:leader-autocomplete-click',
-                                  message: 'Selected leader from autocomplete (click)',
-                                  data: { liderId: p.Id },
-                                })
                               }}
                             >
                               {getLeaderDisplay(p, leaderDisplayOpts)}
